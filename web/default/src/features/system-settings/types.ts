@@ -39,6 +39,73 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type SensitiveDetectionStatus =
+  | ''
+  | 'allowed'
+  | 'blocked'
+  | 'bypassed'
+  | 'error_open'
+
+export type SensitiveDetectionCounter = {
+  key: string
+  name?: string
+  normal_count: number
+  illegal_count: number
+  allowed_count: number
+  bypassed_count: number
+  error_open_count: number
+}
+
+export type SensitiveDetectionRecentLog = {
+  id: number
+  created_at: number
+  username: string
+  token_name: string
+  model_name: string
+  channel: number
+  channel_name?: string
+  group: string
+  content: string
+  sensitive_detection_status?: SensitiveDetectionStatus
+  sensitive_detection_checked?: boolean
+  sensitive_detection_trigger?: string
+  sensitive_detection_objects?: string
+  sensitive_detection_reason?: string
+  sensitive_detection_detector_status?: number
+}
+
+export type SensitiveDetectionStats = {
+  normal_count: number
+  illegal_count: number
+  allowed_count: number
+  bypassed_count: number
+  error_open_count: number
+  top_objects: SensitiveDetectionCounter[]
+  channel_stats: SensitiveDetectionCounter[]
+  group_stats: SensitiveDetectionCounter[]
+  recent_blocked: SensitiveDetectionRecentLog[]
+}
+
+export type SensitiveDetectionStatsResponse = {
+  success: boolean
+  message: string
+  data?: SensitiveDetectionStats
+}
+
+export type SensitiveDetectionChannel = {
+  id: number
+  name: string
+  type: number
+  status: number
+  enabled: boolean
+}
+
+export type SensitiveDetectionChannelsResponse = {
+  success: boolean
+  message: string
+  data?: SensitiveDetectionChannel[]
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string
@@ -222,6 +289,7 @@ export type ModelSettings = {
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
+  SensitiveDetectionGroups: string
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   RetryTimes: number
@@ -276,6 +344,7 @@ export type BillingSettings = {
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
+  SensitiveDetectionGroups: string
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
   PayAddress: string
@@ -370,6 +439,12 @@ export type SecuritySettings = {
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
+  SensitiveDetectionModel: string
+  SensitiveDetectionBaseURL: string
+  SensitiveDetectionAPIKey: string
+  SensitiveDetectionPrompt: string
+  SensitiveDetectionGroups: string
+  GroupRatio: string
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
   'fetch_setting.domain_filter_mode': boolean

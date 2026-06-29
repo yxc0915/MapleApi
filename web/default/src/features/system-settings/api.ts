@@ -17,10 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+
 import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  SensitiveDetectionChannelsResponse,
+  SensitiveDetectionStatsResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -37,6 +40,35 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function getSensitiveDetectionStats(limit = 10) {
+  const res = await api.get<SensitiveDetectionStatsResponse>(
+    '/api/option/sensitive_detection/stats',
+    {
+      params: { limit },
+    }
+  )
+  return res.data
+}
+
+export async function getSensitiveDetectionChannels() {
+  const res = await api.get<SensitiveDetectionChannelsResponse>(
+    '/api/option/sensitive_detection/channels'
+  )
+  return res.data
+}
+
+export async function updateSensitiveDetectionChannels(
+  enabledChannelIds: number[]
+) {
+  const res = await api.put<UpdateOptionResponse>(
+    '/api/option/sensitive_detection/channels',
+    {
+      enabled_channel_ids: enabledChannelIds,
+    }
+  )
   return res.data
 }
 

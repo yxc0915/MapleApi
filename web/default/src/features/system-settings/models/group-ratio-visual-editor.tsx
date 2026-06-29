@@ -48,6 +48,7 @@ type GroupRatioVisualEditorProps = {
   userUsableGroups: string
   groupGroupRatio: string
   autoGroups: string
+  sensitiveDetectionGroups: string
   onChange: (field: string, value: string) => void
 }
 
@@ -61,6 +62,7 @@ type GroupPricingRow = {
   name: string
   ratio: number
   selectable: boolean
+  sensitiveDetectionEnabled: boolean
   description: string
 }
 
@@ -86,7 +88,8 @@ function normalizeRatio(value: unknown): number {
 
 function buildGroupPricingRows(
   groupRatio: string,
-  userUsableGroups: string
+  userUsableGroups: string,
+  sensitiveDetectionGroups: string
 ): GroupPricingRow[] {
   const ratioMap = safeJsonParse<Record<string, number>>(groupRatio, {
     fallback: {},
@@ -96,13 +99,23 @@ function buildGroupPricingRows(
     fallback: {},
     context: 'user usable groups',
   })
-  const names = new Set([...Object.keys(ratioMap), ...Object.keys(usableMap)])
+  const detectionGroups = safeJsonParse<string[]>(sensitiveDetectionGroups, {
+    fallback: [],
+    context: 'violation detection groups',
+  })
+  const detectionSet = new Set(detectionGroups)
+  const names = new Set([
+    ...Object.keys(ratioMap),
+    ...Object.keys(usableMap),
+    ...detectionGroups,
+  ])
 
   return [...names].map((name) => ({
     _id: createGroupPricingId(),
     name,
     ratio: normalizeRatio(ratioMap[name]),
     selectable: Object.hasOwn(usableMap, name),
+    sensitiveDetectionEnabled: detectionSet.has(name),
     description: String(usableMap[name] ?? ''),
   }))
 }
@@ -110,6 +123,7 @@ function buildGroupPricingRows(
 function serializeGroupPricingRows(rows: GroupPricingRow[]) {
   const groupRatio: Record<string, number> = {}
   const userUsableGroups: Record<string, string> = {}
+  const sensitiveDetectionGroups: string[] = []
 
   for (const row of rows) {
     const name = row.name.trim()
@@ -118,11 +132,19 @@ function serializeGroupPricingRows(rows: GroupPricingRow[]) {
     if (row.selectable) {
       userUsableGroups[name] = row.description
     }
+    if (row.sensitiveDetectionEnabled) {
+      sensitiveDetectionGroups.push(name)
+    }
   }
 
   return {
     GroupRatio: JSON.stringify(groupRatio, null, 2),
     UserUsableGroups: JSON.stringify(userUsableGroups, null, 2),
+    SensitiveDetectionGroups: JSON.stringify(
+      sensitiveDetectionGroups.sort((a, b) => a.localeCompare(b)),
+      null,
+      2
+    ),
   }
 }
 
@@ -137,17 +159,29 @@ function groupPricingSignature(rows: GroupPricingRow[]): string {
       fallback: {},
       silent: true,
     }),
+    sensitiveDetectionGroups: safeJsonParse(
+      serialized.SensitiveDetectionGroups,
+      {
+        fallback: [],
+        silent: true,
+      }
+    ),
   })
 }
 
 function sourceGroupPricingSignature(
   groupRatio: string,
-  userUsableGroups: string
+  userUsableGroups: string,
+  sensitiveDetectionGroups: string
 ): string {
   return JSON.stringify({
     groupRatio: safeJsonParse(groupRatio, { fallback: {}, silent: true }),
     userUsableGroups: safeJsonParse(userUsableGroups, {
       fallback: {},
+      silent: true,
+    }),
+    sensitiveDetectionGroups: safeJsonParse(sensitiveDetectionGroups, {
+      fallback: [],
       silent: true,
     }),
   })
@@ -159,6 +193,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   userUsableGroups,
   groupGroupRatio,
   autoGroups,
+  sensitiveDetectionGroups,
   onChange,
 }: GroupRatioVisualEditorProps) {
   const { t } = useTranslation()
@@ -402,6 +437,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       <GroupPricingTable
         groupRatio={groupRatio}
         userUsableGroups={userUsableGroups}
+        sensitiveDetectionGroups={sensitiveDetectionGroups}
         onChange={onChange}
       />
 
@@ -728,31 +764,42 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
 type GroupPricingTableProps = {
   groupRatio: string
   userUsableGroups: string
+  sensitiveDetectionGroups: string
   onChange: (field: string, value: string) => void
 }
 
 function GroupPricingTable({
   groupRatio,
   userUsableGroups,
+  sensitiveDetectionGroups,
   onChange,
 }: GroupPricingTableProps) {
   const { t } = useTranslation()
   const [rows, setRows] = useState<GroupPricingRow[]>(() =>
-    buildGroupPricingRows(groupRatio, userUsableGroups)
+    buildGroupPricingRows(
+      groupRatio,
+      userUsableGroups,
+      sensitiveDetectionGroups
+    )
   )
 
   useEffect(() => {
     const incomingSignature = sourceGroupPricingSignature(
       groupRatio,
-      userUsableGroups
+      userUsableGroups,
+      sensitiveDetectionGroups
     )
     setRows((currentRows) => {
       if (groupPricingSignature(currentRows) === incomingSignature) {
         return currentRows
       }
-      return buildGroupPricingRows(groupRatio, userUsableGroups)
+      return buildGroupPricingRows(
+        groupRatio,
+        userUsableGroups,
+        sensitiveDetectionGroups
+      )
     })
-  }, [groupRatio, userUsableGroups])
+  }, [groupRatio, sensitiveDetectionGroups, userUsableGroups])
 
   const emitRows = useCallback(
     (nextRows: GroupPricingRow[]) => {
@@ -760,6 +807,7 @@ function GroupPricingTable({
       const serialized = serializeGroupPricingRows(nextRows)
       onChange('GroupRatio', serialized.GroupRatio)
       onChange('UserUsableGroups', serialized.UserUsableGroups)
+      onChange('SensitiveDetectionGroups', serialized.SensitiveDetectionGroups)
     },
     [onChange]
   )
@@ -792,6 +840,7 @@ function GroupPricingTable({
         name,
         ratio: 1,
         selectable: true,
+        sensitiveDetectionEnabled: false,
         description: '',
       },
     ])
@@ -888,6 +937,26 @@ function GroupPricingTable({
                         updateRow(row._id, 'selectable', checked === true)
                       }
                       aria-label={t('User selectable')}
+                    />
+                  </div>
+                ),
+              },
+              {
+                id: 'sensitive_detection',
+                header: t('Violation detection'),
+                className: 'w-32 text-center',
+                cell: (row) => (
+                  <div className='flex justify-center'>
+                    <Checkbox
+                      checked={row.sensitiveDetectionEnabled}
+                      onCheckedChange={(checked) =>
+                        updateRow(
+                          row._id,
+                          'sensitiveDetectionEnabled',
+                          checked === true
+                        )
+                      }
+                      aria-label={t('Violation detection')}
                     />
                   </div>
                 ),

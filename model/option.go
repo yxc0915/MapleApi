@@ -170,6 +170,11 @@ func InitOptionMap() {
 	common.OptionMap["CheckSensitiveOnPromptEnabled"] = strconv.FormatBool(setting.CheckSensitiveOnPromptEnabled)
 	common.OptionMap["StopOnSensitiveEnabled"] = strconv.FormatBool(setting.StopOnSensitiveEnabled)
 	common.OptionMap["SensitiveWords"] = setting.SensitiveWordsToString()
+	common.OptionMap["SensitiveDetectionModel"] = setting.SensitiveDetectionModel
+	common.OptionMap["SensitiveDetectionBaseURL"] = setting.SensitiveDetectionBaseURL
+	common.OptionMap["SensitiveDetectionAPIKey"] = setting.SensitiveDetectionAPIKey
+	common.OptionMap["SensitiveDetectionPrompt"] = setting.SensitiveDetectionPrompt
+	common.OptionMap["SensitiveDetectionGroups"] = setting.SensitiveDetectionGroups2JSONString()
 	common.OptionMap["StreamCacheQueueLength"] = strconv.Itoa(setting.StreamCacheQueueLength)
 	common.OptionMap["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
@@ -558,6 +563,16 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":
 		setting.SensitiveWordsFromString(value)
+	case "SensitiveDetectionModel":
+		setting.SensitiveDetectionModel = value
+	case "SensitiveDetectionBaseURL":
+		setting.SensitiveDetectionBaseURL = value
+	case "SensitiveDetectionAPIKey":
+		setting.SensitiveDetectionAPIKey = value
+	case "SensitiveDetectionPrompt":
+		setting.SensitiveDetectionPrompt = value
+	case "SensitiveDetectionGroups":
+		err = setting.UpdateSensitiveDetectionGroupsByJSONString(value)
 	case "AutomaticDisableKeywords":
 		operation_setting.AutomaticDisableKeywordsFromString(value)
 	case "AutomaticDisableStatusCodes":

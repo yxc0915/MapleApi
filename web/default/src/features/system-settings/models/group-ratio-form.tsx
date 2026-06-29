@@ -16,10 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Code2, Eye, HelpCircle } from 'lucide-react'
 import { memo, useCallback, useState } from 'react'
 import { type UseFormReturn } from 'react-hook-form'
-import { Code2, Eye, HelpCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
+import {
+  sideDrawerContentClassName,
+  sideDrawerFormClassName,
+  sideDrawerHeaderClassName,
+} from '@/components/drawer-layout'
 import {
   Accordion,
   AccordionContent,
@@ -45,11 +51,7 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  sideDrawerContentClassName,
-  sideDrawerFormClassName,
-  sideDrawerHeaderClassName,
-} from '@/components/drawer-layout'
+
 import {
   SettingsForm,
   SettingsSwitchContent,
@@ -65,6 +67,7 @@ type GroupFormValues = {
   UserUsableGroups: string
   GroupGroupRatio: string
   AutoGroups: string
+  SensitiveDetectionGroups: string
   DefaultUseAutoGroup: boolean
   GroupSpecialUsableGroup: string
 }
@@ -141,6 +144,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               userUsableGroups={form.watch('UserUsableGroups')}
               groupGroupRatio={form.watch('GroupGroupRatio')}
               autoGroups={form.watch('AutoGroups')}
+              sensitiveDetectionGroups={form.watch('SensitiveDetectionGroups')}
               onChange={(field, value) =>
                 handleFieldChange(field as keyof GroupFormValues, value)
               }
@@ -269,6 +273,25 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON array of group identifiers. When enabled below, new tokens rotate through this list.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='SensitiveDetectionGroups'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Violation detection groups')}</FormLabel>
+                  <FormControl>
+                    <Textarea rows={6} {...field} />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'JSON array of group identifiers that trigger violation detection.'
                     )}
                   </FormDescription>
                   <FormMessage />

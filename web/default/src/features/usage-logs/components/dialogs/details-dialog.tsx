@@ -54,6 +54,7 @@ import {
   getResponseTimeColor,
   renderAuditContent,
 } from '../../lib/format'
+import { getSensitiveDetectionStatusMeta } from '../../lib/sensitive-detection'
 import {
   getLogTypeConfig,
   isPerCallBilling,
@@ -532,6 +533,17 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  const detectionStatusMeta = getSensitiveDetectionStatusMeta(
+    props.log.sensitive_detection_status
+  )
+  const showDetectionDetails = Boolean(
+    props.log.sensitive_detection_status ||
+      props.log.sensitive_detection_checked ||
+      props.log.sensitive_detection_trigger ||
+      props.log.sensitive_detection_objects ||
+      props.log.sensitive_detection_reason ||
+      props.log.sensitive_detection_detector_status
+  )
 
   return (
     <Dialog
@@ -610,6 +622,49 @@ export function DetailsDialog(props: DetailsDialogProps) {
               value={props.log.group || other?.group || ''}
               mono
             />
+          )}
+
+          {showDetectionDetails && (
+            <DetailSection label={t('Violation Detection')}>
+              <DetailRow
+                label={t('Detection Status')}
+                value={
+                  <StatusBadge
+                    label={t(detectionStatusMeta.label)}
+                    variant={detectionStatusMeta.variant}
+                    size='sm'
+                    copyable={false}
+                  />
+                }
+              />
+              {props.log.sensitive_detection_trigger && (
+                <DetailRow
+                  label={t('Trigger')}
+                  value={props.log.sensitive_detection_trigger}
+                  mono
+                />
+              )}
+              {props.log.sensitive_detection_objects && (
+                <DetailRow
+                  label={t('Flagged objects')}
+                  value={props.log.sensitive_detection_objects}
+                  mono
+                />
+              )}
+              {props.log.sensitive_detection_reason && (
+                <DetailRow
+                  label={t('Reason')}
+                  value={props.log.sensitive_detection_reason}
+                />
+              )}
+              {props.log.sensitive_detection_detector_status > 0 && (
+                <DetailRow
+                  label={t('Detector Status')}
+                  value={props.log.sensitive_detection_detector_status}
+                  mono
+                />
+              )}
+            </DetailSection>
           )}
 
           {showAdminIp && (

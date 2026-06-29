@@ -277,6 +277,7 @@ func migrateDB() error {
 		&Redemption{},
 		&Ability{},
 		&Log{},
+		&SensitiveDetectionStat{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -331,6 +332,7 @@ func migrateDBFast() error {
 		{&Redemption{}, "Redemption"},
 		{&Ability{}, "Ability"},
 		{&Log{}, "Log"},
+		{&SensitiveDetectionStat{}, "SensitiveDetectionStat"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
@@ -400,6 +402,9 @@ func migrateClickHouseLogDB() error {
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
 		return err
 	}
+	if err := syncClickHouseLogColumns(); err != nil {
+		return err
+	}
 	return syncClickHouseLogTTL(ttlDays)
 }
 
@@ -448,7 +453,13 @@ CREATE TABLE IF NOT EXISTS logs (
 	ip String DEFAULT '',
 	request_id String DEFAULT '',
 	upstream_request_id String DEFAULT '',
-	other String DEFAULT ''
+	other String DEFAULT '',
+	sensitive_detection_status String DEFAULT '',
+	sensitive_detection_checked UInt8 DEFAULT 0,
+	sensitive_detection_trigger String DEFAULT '',
+	sensitive_detection_objects String DEFAULT '',
+	sensitive_detection_reason String DEFAULT '',
+	sensitive_detection_detector_status Int32 DEFAULT 0
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))
@@ -469,6 +480,23 @@ func syncClickHouseLogTTL(ttlDays int) error {
 		return nil
 	}
 	return LOG_DB.Exec("ALTER TABLE logs REMOVE TTL").Error
+}
+
+func syncClickHouseLogColumns() error {
+	columns := []string{
+		"sensitive_detection_status String DEFAULT ''",
+		"sensitive_detection_checked UInt8 DEFAULT 0",
+		"sensitive_detection_trigger String DEFAULT ''",
+		"sensitive_detection_objects String DEFAULT ''",
+		"sensitive_detection_reason String DEFAULT ''",
+		"sensitive_detection_detector_status Int32 DEFAULT 0",
+	}
+	for _, column := range columns {
+		if err := LOG_DB.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS " + column).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func clickHouseLogTableHasTTL() (bool, error) {

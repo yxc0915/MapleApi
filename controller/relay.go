@@ -123,23 +123,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
-	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
+	// Avoid building huge CombineText (strings.Join) when token counting is disabled.
 	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCountToken {
+	if needCountToken {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
-	}
-
-	if needSensitiveCheck && meta != nil {
-		contains, words := service.CheckSensitiveText(meta.CombineText)
-		if contains {
-			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
-			return
-		}
 	}
 
 	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
@@ -188,6 +178,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
+	var lastSensitiveDetectionChannel *model.Channel
+	var lastSensitiveDetectionGroup string
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
@@ -198,6 +190,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		usingGroup := currentSensitiveDetectionGroup(c, relayInfo)
+		lastSensitiveDetectionChannel = channel
+		lastSensitiveDetectionGroup = usingGroup
+		channelDetectionEnabled := selectedChannelSensitiveDetectionEnabled(channel, relayInfo)
+		groupDetectionEnabled := setting.SensitiveDetectionGroupEnabled(usingGroup)
+		if detectionErr := service.EvaluateSensitiveDetection(c, request, channelDetectionEnabled, groupDetectionEnabled); detectionErr != nil {
+			newAPIError = detectionErr
+			recordSensitiveDetectionBlocked(c, relayInfo, channel, usingGroup, detectionErr)
+			break
+		}
+
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
@@ -223,6 +226,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			recordSensitiveDetectionForwardStat(c, relayInfo, lastSensitiveDetectionChannel, lastSensitiveDetectionGroup)
 			return
 		}
 
@@ -242,6 +246,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
+		recordSensitiveDetectionForwardStat(c, relayInfo, lastSensitiveDetectionChannel, lastSensitiveDetectionGroup)
 		gopool.Go(func() {
 			perfmetrics.RecordRelaySample(relayInfo, false, 0)
 		})
@@ -259,6 +264,97 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func currentSensitiveDetectionGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	if autoGroup := common.GetContextKeyString(c, constant.ContextKeyAutoGroup); autoGroup != "" {
+		return autoGroup
+	}
+	if relayInfo != nil && relayInfo.UsingGroup != "" {
+		return relayInfo.UsingGroup
+	}
+	return common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+}
+
+func selectedChannelSensitiveDetectionEnabled(channel *model.Channel, relayInfo *relaycommon.RelayInfo) bool {
+	if channel == nil {
+		return false
+	}
+	if relayInfo != nil && relayInfo.ChannelMeta != nil && relayInfo.ChannelMeta.ChannelId == channel.Id {
+		return relayInfo.ChannelMeta.ChannelOtherSettings.SensitiveDetectionEnabled
+	}
+	return channel.GetOtherSettings().SensitiveDetectionEnabled
+}
+
+func recordSensitiveDetectionForwardStat(c *gin.Context, relayInfo *relaycommon.RelayInfo, channel *model.Channel, usingGroup string) {
+	if common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionForwardStatRecorded) {
+		return
+	}
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	if !ok || result.Status == types.SensitiveDetectionStatusBlocked {
+		return
+	}
+	channelId := 0
+	if channel != nil {
+		channelId = channel.Id
+	}
+	model.RecordSensitiveDetectionStat(model.SensitiveDetectionStatParams{
+		UserId:    relayInfo.UserId,
+		TokenId:   relayInfo.TokenId,
+		TokenName: c.GetString("token_name"),
+		ChannelId: channelId,
+		GroupName: usingGroup,
+		ModelName: relayInfo.OriginModelName,
+		Result:    result,
+	})
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionForwardStatRecorded, true)
+}
+
+func recordSensitiveDetectionBlocked(c *gin.Context, relayInfo *relaycommon.RelayInfo, channel *model.Channel, usingGroup string, apiErr *types.NewAPIError) {
+	result, _ := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	channelId := 0
+	channelName := ""
+	channelType := 0
+	if channel != nil {
+		channelId = channel.Id
+		channelName = channel.Name
+		channelType = channel.Type
+	}
+
+	model.RecordSensitiveDetectionStat(model.SensitiveDetectionStatParams{
+		UserId:    relayInfo.UserId,
+		TokenId:   relayInfo.TokenId,
+		TokenName: c.GetString("token_name"),
+		ChannelId: channelId,
+		GroupName: usingGroup,
+		ModelName: relayInfo.OriginModelName,
+		Result:    result,
+	})
+
+	other := map[string]interface{}{
+		"error_type":                          apiErr.GetErrorType(),
+		"error_code":                          apiErr.GetErrorCode(),
+		"status_code":                         apiErr.StatusCode,
+		"channel_id":                          channelId,
+		"channel_name":                        channelName,
+		"channel_type":                        channelType,
+		"sensitive_detection_trigger":         result.Trigger,
+		"sensitive_detection_objects":         result.Objects,
+		"sensitive_detection_reason":          result.Reason,
+		"sensitive_detection_detector_status": result.DetectorStatus,
+	}
+	if c.Request != nil && c.Request.URL != nil {
+		other["request_path"] = c.Request.URL.Path
+	}
+	if result.Reason != "" {
+		other["reject_reason"] = result.Reason
+	}
+	startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+	if startTime.IsZero() {
+		startTime = time.Now()
+	}
+	useTimeSeconds := int(time.Since(startTime).Seconds())
+	model.RecordErrorLog(c, relayInfo.UserId, channelId, relayInfo.OriginModelName, c.GetString("token_name"), apiErr.MaskSensitiveErrorWithStatusCode(), relayInfo.TokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), usingGroup, other)
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {

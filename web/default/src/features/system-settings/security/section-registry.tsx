@@ -43,13 +43,16 @@ const SECURITY_SECTIONS = [
   },
   {
     id: 'sensitive-words',
-    titleKey: 'Sensitive Words',
+    titleKey: 'Violation Detection',
     build: (settings: SecuritySettings) => (
       <SensitiveWordsSection
         defaultValues={{
-          CheckSensitiveEnabled: settings.CheckSensitiveEnabled,
-          CheckSensitiveOnPromptEnabled: settings.CheckSensitiveOnPromptEnabled,
-          SensitiveWords: settings.SensitiveWords,
+          SensitiveDetectionModel: settings.SensitiveDetectionModel,
+          SensitiveDetectionBaseURL: settings.SensitiveDetectionBaseURL,
+          SensitiveDetectionAPIKey: settings.SensitiveDetectionAPIKey,
+          SensitiveDetectionPrompt: settings.SensitiveDetectionPrompt,
+          SensitiveDetectionGroups: settings.SensitiveDetectionGroups,
+          GroupRatio: settings.GroupRatio,
         }}
       />
     ),

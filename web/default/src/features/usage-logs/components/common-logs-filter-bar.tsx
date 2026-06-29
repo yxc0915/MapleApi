@@ -22,6 +22,7 @@ import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
 import { useIsAdmin } from '@/hooks/use-admin'
 import { Button } from '@/components/ui/button'
 import {
@@ -37,8 +38,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
+import {
+  SENSITIVE_DETECTION_ALL_VALUE,
+  SENSITIVE_DETECTION_STATUS_FILTERS,
+} from '../lib/sensitive-detection'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
@@ -86,6 +92,7 @@ function buildSearchSourceKey(values: {
   username?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
+  sensitiveDetectionStatus?: unknown
   type?: unknown
 }) {
   return [
@@ -98,6 +105,7 @@ function buildSearchSourceKey(values: {
     values.username,
     values.requestId,
     values.upstreamRequestId,
+    values.sensitiveDetectionStatus,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -131,6 +139,7 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
+      sensitiveDetectionStatus: searchParams.sensitiveDetectionStatus,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -145,6 +154,8 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
+      sensitiveDetectionStatus:
+        searchParams.sensitiveDetectionStatus || undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -161,6 +172,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.username,
     searchParams.requestId,
     searchParams.upstreamRequestId,
+    searchParams.sensitiveDetectionStatus,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -237,11 +249,17 @@ export function CommonLogsFilterBar<TData>(
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
-    !!filters.upstreamRequestId
+    !!filters.upstreamRequestId ||
+    !!filters.sensitiveDetectionStatus
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
+  const hasSensitiveDetectionFilter = !!filters.sensitiveDetectionStatus
   const hasAdditionalFilters =
-    !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
+    !!filters.model ||
+    !!filters.group ||
+    hasTypeFilter ||
+    hasSensitiveDetectionFilter ||
+    hasExpandedFilters
 
   const expandedFilterCount = [
     filters.token,
@@ -249,6 +267,7 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
+    filters.sensitiveDetectionStatus,
   ].filter(Boolean).length
   const sensitiveType = sensitiveVisible ? 'text' : 'password'
   const logTypeItems = useMemo(
@@ -261,6 +280,19 @@ export function CommonLogsFilterBar<TData>(
   )
   const logTypeLabel =
     logTypeItems.find((type) => type.value === logType)?.label ?? t('All Types')
+  const detectionStatusItems = useMemo(
+    () =>
+      SENSITIVE_DETECTION_STATUS_FILTERS.map((status) => ({
+        value: status.value,
+        label: t(status.label),
+      })),
+    [t]
+  )
+  const detectionStatusValue =
+    filters.sensitiveDetectionStatus || SENSITIVE_DETECTION_ALL_VALUE
+  const detectionStatusLabel =
+    detectionStatusItems.find((status) => status.value === detectionStatusValue)
+      ?.label ?? t('All Detection Statuses')
 
   const statsBar = (
     <div className='flex flex-wrap items-center gap-2'>
@@ -359,6 +391,33 @@ export function CommonLogsFilterBar<TData>(
   )
   const advancedFilters = (
     <>
+      <LogsFilterField>
+        <Select
+          items={detectionStatusItems}
+          value={detectionStatusValue}
+          onValueChange={(value) => {
+            handleChange(
+              'sensitiveDetectionStatus',
+              value && value !== SENSITIVE_DETECTION_ALL_VALUE
+                ? value
+                : undefined
+            )
+          }}
+        >
+          <SelectTrigger>
+            <SelectValue>{detectionStatusLabel}</SelectValue>
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {SENSITIVE_DETECTION_STATUS_FILTERS.map((status) => (
+                <SelectItem key={status.value} value={status.value}>
+                  {t(status.label)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
       <LogsFilterField>
         <LogsFilterInput
           placeholder={t('Token Name')}

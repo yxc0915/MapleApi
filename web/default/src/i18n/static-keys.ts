@@ -516,6 +516,15 @@ export const STATIC_I18N_KEYS = [
   'Batch detection failed',
   'Batch detection complete: {{channels}} channels, {{add}} to add, {{remove}} to remove, {{fails}} failed',
 
+  // Violation detection
+  'Allowed',
+  'Blocked',
+  'Bypassed',
+  'Failed open',
+  'Historical unmarked',
+  'Passed',
+  'Unmarked',
+
   // Dashboard flow stages (labels/descriptions passed to t at runtime)
   'User',
   'Node',

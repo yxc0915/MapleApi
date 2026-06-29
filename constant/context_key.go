@@ -67,6 +67,10 @@ const (
 	ContextKeyLanguage ContextKey = "language"
 	ContextKeyIsStream ContextKey = "is_stream"
 
+	ContextKeySensitiveDetectionResult              ContextKey = "sensitive_detection_result"
+	ContextKeySensitiveDetectionDone                ContextKey = "sensitive_detection_done"
+	ContextKeySensitiveDetectionForwardStatRecorded ContextKey = "sensitive_detection_forward_stat_recorded"
+
 	// ContextKeyAuditLogged marks that the current request has already recorded
 	// a manage/operation audit log inside the handler. When set, the admin-audit
 	// fallback in authHelper (finishAdminAudit) skips its record to avoid

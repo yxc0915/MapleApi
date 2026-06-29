@@ -45,6 +45,14 @@ export const usageLogSchema = z.object({
   other: z.string().default(''),
   request_id: z.string().default(''),
   upstream_request_id: z.string().default(''),
+  sensitive_detection_status: z
+    .enum(['', 'allowed', 'blocked', 'bypassed', 'error_open'])
+    .default(''),
+  sensitive_detection_checked: z.boolean().default(false),
+  sensitive_detection_trigger: z.string().default(''),
+  sensitive_detection_objects: z.string().default(''),
+  sensitive_detection_reason: z.string().default(''),
+  sensitive_detection_detector_status: z.number().default(0),
 })
 
 export type UsageLog = z.infer<typeof usageLogSchema>

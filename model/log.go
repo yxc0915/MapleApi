@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -79,6 +80,13 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+
+	SensitiveDetectionStatus         string `json:"sensitive_detection_status,omitempty" gorm:"size:32;index;default:''"`
+	SensitiveDetectionChecked        bool   `json:"sensitive_detection_checked,omitempty" gorm:"index;default:false"`
+	SensitiveDetectionTrigger        string `json:"sensitive_detection_trigger,omitempty" gorm:"size:32;index;default:''"`
+	SensitiveDetectionObjects        string `json:"sensitive_detection_objects,omitempty" gorm:"type:text"`
+	SensitiveDetectionReason         string `json:"sensitive_detection_reason,omitempty" gorm:"type:text"`
+	SensitiveDetectionDetectorStatus int    `json:"sensitive_detection_detector_status,omitempty" gorm:"default:0"`
 }
 
 // don't use iota, avoid change log type value
@@ -102,6 +110,19 @@ func ensureLogRequestId(log *Log) {
 func createLog(log *Log) error {
 	ensureLogRequestId(log)
 	return LOG_DB.Create(log).Error
+}
+
+func applySensitiveDetectionLogFields(c *gin.Context, log *Log) {
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	if !ok {
+		return
+	}
+	log.SensitiveDetectionStatus = string(result.Status)
+	log.SensitiveDetectionChecked = result.Checked
+	log.SensitiveDetectionTrigger = result.Trigger
+	log.SensitiveDetectionObjects = result.Objects
+	log.SensitiveDetectionReason = result.Reason
+	log.SensitiveDetectionDetectorStatus = result.DetectorStatus
 }
 
 func clickHouseLogOrder(prefix string) string {
@@ -320,6 +341,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	applySensitiveDetectionLogFields(c, log)
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
@@ -384,6 +406,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	applySensitiveDetectionLogFields(c, log)
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
@@ -470,7 +493,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string, sensitiveDetectionStatus string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -492,6 +515,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	}
 	if upstreamRequestId != "" {
 		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
+	}
+	if sensitiveDetectionStatus != "" {
+		tx = tx.Where("logs.sensitive_detection_status = ?", sensitiveDetectionStatus)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -566,7 +592,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
-func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string, sensitiveDetectionStatus string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -585,6 +611,9 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	}
 	if upstreamRequestId != "" {
 		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
+	}
+	if sensitiveDetectionStatus != "" {
+		tx = tx.Where("logs.sensitive_detection_status = ?", sensitiveDetectionStatus)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)

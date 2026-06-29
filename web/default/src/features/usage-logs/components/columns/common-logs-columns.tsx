@@ -18,7 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState } from 'react'
 import { type ColumnDef } from '@tanstack/react-table'
-import { CircleAlert, GitBranch, Sparkles, KeyRound } from 'lucide-react'
+import {
+  CircleAlert,
+  GitBranch,
+  Sparkles,
+  KeyRound,
+  ShieldAlert,
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -59,6 +65,7 @@ import {
   getLogTypeConfig,
   isPerCallBilling,
 } from '../../lib/utils'
+import { getSensitiveDetectionStatusMeta } from '../../lib/sensitive-detection'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 import { ModelBadge } from '../model-badge'
@@ -307,6 +314,41 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       size: 180,
     },
   ]
+
+  columns.push({
+    accessorKey: 'sensitive_detection_status',
+    header: t('Detection'),
+    cell: ({ row }) => {
+      const log = row.original
+      const meta = getSensitiveDetectionStatusMeta(
+        log.sensitive_detection_status
+      )
+      const details = [
+        log.sensitive_detection_trigger,
+        log.sensitive_detection_objects,
+        log.sensitive_detection_reason,
+      ].filter(Boolean)
+
+      return (
+        <div className='flex max-w-[180px] flex-col gap-0.5'>
+          <StatusBadge
+            label={t(meta.label)}
+            variant={meta.variant}
+            icon={ShieldAlert}
+            size='sm'
+            copyable={false}
+            className='max-w-full'
+          />
+          {details.length > 0 && (
+            <span className='text-muted-foreground/70 truncate text-xs'>
+              {details.join(' · ')}
+            </span>
+          )}
+        </div>
+      )
+    },
+    size: 150,
+  })
 
   if (isAdmin) {
     columns.push(

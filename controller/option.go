@@ -112,6 +112,48 @@ func GetOptions(c *gin.Context) {
 	})
 }
 
+func GetSensitiveDetectionStats(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	stats, err := model.GetSensitiveDetectionStatsSummary(limit)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, stats)
+}
+
+func GetSensitiveDetectionChannels(c *gin.Context) {
+	channels, err := model.ListSensitiveDetectionChannels()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, channels)
+}
+
+type SensitiveDetectionChannelsUpdateRequest struct {
+	EnabledChannelIDs []int `json:"enabled_channel_ids"`
+}
+
+func UpdateSensitiveDetectionChannels(c *gin.Context) {
+	var req SensitiveDetectionChannelsUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "无效的参数",
+		})
+		return
+	}
+	if err := model.UpdateSensitiveDetectionChannels(req.EnabledChannelIDs); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.sensitive_detection_channels.update", map[string]interface{}{
+		"count": len(req.EnabledChannelIDs),
+	})
+	common.ApiSuccess(c, nil)
+}
+
 type OptionUpdateRequest struct {
 	Key   string `json:"key"`
 	Value any    `json:"value"`

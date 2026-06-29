@@ -215,6 +215,13 @@ export function buildApiParams(config: {
     ...(searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
+    ...(searchParams.sensitiveDetectionStatus
+      ? {
+          sensitive_detection_status: String(
+            searchParams.sensitiveDetectionStatus
+          ),
+        }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 
@@ -241,6 +248,9 @@ export function buildApiParams(config: {
           break
         case 'username':
           if (isAdmin) params.username = String(value)
+          break
+        case 'sensitive_detection_status':
+          params.sensitive_detection_status = String(value)
           break
       }
     })
