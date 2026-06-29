@@ -294,11 +294,15 @@ func recordSensitiveDetectionForwardStat(c *gin.Context, relayInfo *relaycommon.
 	if !ok || result.Status == types.SensitiveDetectionStatusBlocked {
 		return
 	}
+	// 去重标记同步设置，保证同一请求只异步落库一次。
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionForwardStatRecorded, true)
+
 	channelId := 0
 	if channel != nil {
 		channelId = channel.Id
 	}
-	model.RecordSensitiveDetectionStat(model.SensitiveDetectionStatParams{
+	// 值拷贝后丢协程池异步落库，避免阻塞响应路径；goroutine 内不再访问 c/relayInfo。
+	params := model.SensitiveDetectionStatParams{
 		UserId:    relayInfo.UserId,
 		TokenId:   relayInfo.TokenId,
 		TokenName: c.GetString("token_name"),
@@ -306,8 +310,10 @@ func recordSensitiveDetectionForwardStat(c *gin.Context, relayInfo *relaycommon.
 		GroupName: usingGroup,
 		ModelName: relayInfo.OriginModelName,
 		Result:    result,
+	}
+	common.RelayCtxGo(c.Request.Context(), func() {
+		model.RecordSensitiveDetectionStat(params)
 	})
-	common.SetContextKey(c, constant.ContextKeySensitiveDetectionForwardStatRecorded, true)
 }
 
 func recordSensitiveDetectionBlocked(c *gin.Context, relayInfo *relaycommon.RelayInfo, channel *model.Channel, usingGroup string, apiErr *types.NewAPIError) {
@@ -321,7 +327,7 @@ func recordSensitiveDetectionBlocked(c *gin.Context, relayInfo *relaycommon.Rela
 		channelType = channel.Type
 	}
 
-	model.RecordSensitiveDetectionStat(model.SensitiveDetectionStatParams{
+	statParams := model.SensitiveDetectionStatParams{
 		UserId:    relayInfo.UserId,
 		TokenId:   relayInfo.TokenId,
 		TokenName: c.GetString("token_name"),
@@ -329,7 +335,7 @@ func recordSensitiveDetectionBlocked(c *gin.Context, relayInfo *relaycommon.Rela
 		GroupName: usingGroup,
 		ModelName: relayInfo.OriginModelName,
 		Result:    result,
-	})
+	}
 
 	other := map[string]interface{}{
 		"error_type":                          apiErr.GetErrorType(),
@@ -354,7 +360,33 @@ func recordSensitiveDetectionBlocked(c *gin.Context, relayInfo *relaycommon.Rela
 		startTime = time.Now()
 	}
 	useTimeSeconds := int(time.Since(startTime).Seconds())
-	model.RecordErrorLog(c, relayInfo.UserId, channelId, relayInfo.OriginModelName, c.GetString("token_name"), apiErr.MaskSensitiveErrorWithStatusCode(), relayInfo.TokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), usingGroup, other)
+
+	// 同步提取所有 *gin.Context 派生值，goroutine 内改用 detached 写入，不再访问 c。
+	logCtx := model.ErrorLogContext{
+		Username:          c.GetString("username"),
+		RequestId:         c.GetString(common.RequestIdKey),
+		UpstreamRequestId: c.GetString(common.UpstreamRequestIdKey),
+		ClientIP:          c.ClientIP(),
+		Detection: &model.SensitiveDetectionLogFields{
+			Status:         string(result.Status),
+			Checked:        result.Checked,
+			Trigger:        result.Trigger,
+			Objects:        result.Objects,
+			Reason:         result.Reason,
+			DetectorStatus: result.DetectorStatus,
+		},
+	}
+	userId := relayInfo.UserId
+	tokenId := relayInfo.TokenId
+	modelName := relayInfo.OriginModelName
+	tokenName := c.GetString("token_name")
+	isStream := common.GetContextKeyBool(c, constant.ContextKeyIsStream)
+	maskedContent := apiErr.MaskSensitiveErrorWithStatusCode()
+
+	common.RelayCtxGo(c.Request.Context(), func() {
+		model.RecordSensitiveDetectionStat(statParams)
+		model.RecordErrorLogDetached(userId, channelId, modelName, tokenName, maskedContent, tokenId, useTimeSeconds, isStream, usingGroup, other, logCtx)
+	})
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {

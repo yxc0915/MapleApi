@@ -52,6 +52,22 @@ const SECURITY_SECTIONS = [
           SensitiveDetectionAPIKey: settings.SensitiveDetectionAPIKey,
           SensitiveDetectionPrompt: settings.SensitiveDetectionPrompt,
           SensitiveDetectionGroups: settings.SensitiveDetectionGroups,
+          SensitiveDetectionTimeoutSeconds:
+            settings.SensitiveDetectionTimeoutSeconds,
+          SensitiveDetectionMaxIdleConns: settings.SensitiveDetectionMaxIdleConns,
+          SensitiveDetectionMaxIdleConnsPerHost:
+            settings.SensitiveDetectionMaxIdleConnsPerHost,
+          SensitiveDetectionRPM: settings.SensitiveDetectionRPM,
+          SensitiveDetectionCacheEnabled:
+            settings.SensitiveDetectionCacheEnabled,
+          SensitiveDetectionCacheTTLSeconds:
+            settings.SensitiveDetectionCacheTTLSeconds,
+          SensitiveDetectionCacheMaxItems:
+            settings.SensitiveDetectionCacheMaxItems,
+          SensitiveDetectionBreakerThreshold:
+            settings.SensitiveDetectionBreakerThreshold,
+          SensitiveDetectionBreakerCooldownSeconds:
+            settings.SensitiveDetectionBreakerCooldownSeconds,
           GroupRatio: settings.GroupRatio,
         }}
       />

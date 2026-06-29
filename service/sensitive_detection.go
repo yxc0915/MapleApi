@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/common/limiter"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
@@ -22,8 +22,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
-
-const sensitiveDetectionTimeout = 20 * time.Second
 
 type sensitiveDetectionMessage struct {
 	Role    string `json:"role"`
@@ -78,10 +76,52 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		return nil
 	}
 
+	// 缓存命中（allowed/blocked）直接复用，不再调用检测模型、也不消耗熔断/限流配额。
+	if cached, found := loadCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text)); found {
+		cached.Trigger = trigger
+		cached.Checked = true
+		setSensitiveDetectionResult(c, cached)
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+		if cached.Status == types.SensitiveDetectionStatusBlocked {
+			reason := cached.Reason
+			if reason == "" {
+				reason = "prompt blocked by sensitive detection"
+			}
+			return types.NewErrorWithStatusCode(errors.New(reason), types.ErrorCodePromptBlocked, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
+		return nil
+	}
+
+	// 命中熔断时直接放行：检测模型故障不应把网关拖死。
+	if !sensitiveDetectionBreakerAllows() {
+		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusErrorOpen,
+			Trigger: trigger,
+			Checked: true,
+			Reason:  "breaker_open",
+		})
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+		return nil
+	}
+
+	// 限流：超过配置的 RPM 上限时放行（不检测），避免把检测模型打爆。
+	if !allowSensitiveDetectionCall(c.Request.Context()) {
+		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusErrorOpen,
+			Trigger: trigger,
+			Checked: true,
+			Reason:  "rate_limited",
+		})
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+		return nil
+	}
+
 	result, err := callSensitiveDetectionModel(c, text)
 	result.Trigger = trigger
 	result.Checked = true
 	if err != nil {
+		// 仅调用失败（网络/超时/非 2xx）计入熔断；业务拦截(status!=200)不算失败。
+		recordSensitiveDetectionCallOutcome(false)
 		result.Status = types.SensitiveDetectionStatusErrorOpen
 		result.Reason = truncateSensitiveDetectionText(err.Error(), 512)
 		setSensitiveDetectionResult(c, result)
@@ -90,14 +130,19 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		return nil
 	}
 
+	// 正常拿到 status JSON 即视为调用成功，重置熔断失败计数。
+	recordSensitiveDetectionCallOutcome(true)
+
 	if result.DetectorStatus == http.StatusOK {
 		result.Status = types.SensitiveDetectionStatusAllowed
+		storeCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text), result)
 		setSensitiveDetectionResult(c, result)
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 		return nil
 	}
 
 	result.Status = types.SensitiveDetectionStatusBlocked
+	storeCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text), result)
 	setSensitiveDetectionResult(c, result)
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 	reason := result.Reason
@@ -135,6 +180,40 @@ func sensitiveDetectionTrigger(channelEnabled bool, groupEnabled bool) string {
 	return ""
 }
 
+// allowSensitiveDetectionCall 基于 Redis 令牌桶对发往检测模型的调用做 RPM 限流。
+// 返回 false 表示当前已超限，调用方应 fail-open 放行（不检测、不拦截）。
+// 限流策略为 fail-open：配置为 0（无限）、Redis 未启用、或限流器自身出错时一律放行。
+// 多实例共享同一个 Redis 桶（key 固定），因此全站 RPM 上限准确。
+func allowSensitiveDetectionCall(ctx context.Context) bool {
+	rpm := setting.SensitiveDetectionRPM
+	if rpm <= 0 {
+		return true
+	}
+	if !common.RedisEnabled || common.RDB == nil {
+		return true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// RPM -> 令牌桶：容量取 rpm（允许短时间内用满一分钟预算的突发），
+	// 补充速率为 rpm/60（向上取整，至少 1）token/秒，稳态下约等于每分钟 rpm 次。
+	refill := rpm / 60
+	if refill < 1 {
+		refill = 1
+	}
+	limiterInstance := limiter.New(ctx, common.RDB)
+	allowed, err := limiterInstance.Allow(ctx, "sensitive_detection:rpm",
+		limiter.WithCapacity(int64(rpm)),
+		limiter.WithRate(int64(refill)),
+		limiter.WithRequested(1),
+	)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("sensitive detection rate limiter error (fail-open): %s", err.Error()))
+		return true
+	}
+	return allowed
+}
+
 func setSensitiveDetectionResult(c *gin.Context, result types.SensitiveDetectionResult) {
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionResult, result)
 }
@@ -160,7 +239,7 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, sensitiveDetectionTimeout)
+	ctx, cancel := context.WithTimeout(ctx, sensitiveDetectionTimeoutDuration())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sensitiveDetectionURL(setting.SensitiveDetectionBaseURL), bytes.NewReader(body))
@@ -170,10 +249,7 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(setting.SensitiveDetectionAPIKey))
 
-	client := GetHttpClient()
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := getSensitiveDetectionClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return types.SensitiveDetectionResult{}, err

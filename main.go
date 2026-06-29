@@ -279,6 +279,8 @@ func InitResources() error {
 	ratio_setting.InitRatioSettings()
 
 	service.InitHttpClient()
+	// 检测客户端使用独立连接池，必须与 InitHttpClient 一起在 env 初始化后构造。
+	service.InitSensitiveDetectionHttpClient()
 
 	service.InitTokenEncoders()
 

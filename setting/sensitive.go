@@ -29,6 +29,34 @@ var SensitiveDetectionAPIKey = ""
 var SensitiveDetectionPrompt = ""
 var SensitiveDetectionGroups = []string{}
 
+// 违规检测性能参数。0 表示无限制/禁用（按字段语义）。
+// 这些值支持运行时通过系统设置热更新（见 model/option.go updateOptionMap）。
+var (
+	// SensitiveDetectionTimeoutSeconds 单次检测调用的最大等待时长（秒）。0 视为 5。
+	SensitiveDetectionTimeoutSeconds = 5
+	// SensitiveDetectionMaxIdleConns 检测客户端独立连接池的全局空闲连接上限。
+	SensitiveDetectionMaxIdleConns = 256
+	// SensitiveDetectionMaxIdleConnsPerHost 检测客户端独立连接池的单 host 空闲连接上限。
+	SensitiveDetectionMaxIdleConnsPerHost = 128
+	// SensitiveDetectionRPM 发往检测模型的每分钟调用上限，0 表示不限流。
+	SensitiveDetectionRPM = 0
+	// SensitiveDetectionCacheEnabled 是否缓存检测结果（命中即复用，不再调用检测模型）。
+	SensitiveDetectionCacheEnabled = true
+	// SensitiveDetectionCacheTTLSeconds 缓存条目存活时长（秒）。
+	SensitiveDetectionCacheTTLSeconds = 300
+	// SensitiveDetectionCacheMaxItems Redis 不可用时内存回退 LRU 的容量。
+	SensitiveDetectionCacheMaxItems = 2048
+	// SensitiveDetectionBreakerThreshold 连续失败几次后触发熔断，0 表示不熔断。
+	SensitiveDetectionBreakerThreshold = 5
+	// SensitiveDetectionBreakerCooldownSeconds 熔断打开后的冷却时长（秒）。
+	SensitiveDetectionBreakerCooldownSeconds = 30
+)
+
+// SensitiveDetectionCacheEnabledBool 以 bool 形式返回缓存开关，避免调用方重复解析。
+func SensitiveDetectionCacheEnabledBool() bool {
+	return SensitiveDetectionCacheEnabled
+}
+
 func SensitiveWordsToString() string {
 	return strings.Join(SensitiveWords, "\n")
 }

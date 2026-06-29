@@ -348,6 +348,65 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	}
 }
 
+// ErrorLogContext 携带从 *gin.Context 同步提取的全部派生值，供异步落库使用。
+// 异步 goroutine 不能访问 *gin.Context（请求结束后会被复用/回收），因此调用方
+// 必须在进入 goroutine 前把这些值取出来。
+type ErrorLogContext struct {
+	Username         string
+	RequestId        string
+	UpstreamRequestId string
+	ClientIP         string
+	// Detection 为非 nil 时直接写入违规检测字段，跳过从 context 读取。
+	Detection        *SensitiveDetectionLogFields
+}
+
+// SensitiveDetectionLogFields 是违规检测日志字段的值快照，避免异步时回读 context。
+type SensitiveDetectionLogFields struct {
+	Status         string
+	Checked        bool
+	Trigger        string
+	Objects        string
+	Reason         string
+	DetectorStatus int
+}
+
+// RecordErrorLogDetached 与 RecordErrorLog 行为一致，但不依赖 *gin.Context：
+// 所有 context 派生值由调用方通过 ctx 参数预先传入，可在 goroutine 中安全调用。
+func RecordErrorLogDetached(userId int, channelId int, modelName string, tokenName string, content string, tokenId int, useTimeSeconds int,
+	isStream bool, group string, other map[string]interface{}, ctx ErrorLogContext) {
+	otherStr := common.MapToJsonStr(other)
+	log := &Log{
+		UserId:           userId,
+		Username:         ctx.Username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             LogTypeError,
+		Content:          content,
+		TokenName:        tokenName,
+		ModelName:        modelName,
+		ChannelId:        channelId,
+		TokenId:          tokenId,
+		UseTime:          useTimeSeconds,
+		IsStream:         isStream,
+		Group:            group,
+		Ip:               ctx.ClientIP,
+		RequestId:        ctx.RequestId,
+		UpstreamRequestId: ctx.UpstreamRequestId,
+		Other:            otherStr,
+	}
+	if ctx.Detection != nil {
+		log.SensitiveDetectionStatus = ctx.Detection.Status
+		log.SensitiveDetectionChecked = ctx.Detection.Checked
+		log.SensitiveDetectionTrigger = ctx.Detection.Trigger
+		log.SensitiveDetectionObjects = ctx.Detection.Objects
+		log.SensitiveDetectionReason = ctx.Detection.Reason
+		log.SensitiveDetectionDetectorStatus = ctx.Detection.DetectorStatus
+	}
+	err := createLog(log)
+	if err != nil {
+		common.SysError("failed to record detached log: " + err.Error())
+	}
+}
+
 type RecordConsumeLogParams struct {
 	ChannelId        int                    `json:"channel_id"`
 	PromptTokens     int                    `json:"prompt_tokens"`

@@ -22,12 +22,13 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   CircleSlash2,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react'
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -48,6 +49,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import {
   Form,
   FormControl,
   FormDescription,
@@ -57,7 +63,9 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
@@ -87,6 +95,15 @@ const detectionSchema = z.object({
   SensitiveDetectionPrompt: z.string().optional(),
   SensitiveDetectionGroups: z.array(z.string()),
   SensitiveDetectionChannelIDs: z.array(z.string()),
+  SensitiveDetectionTimeoutSeconds: z.number().min(0),
+  SensitiveDetectionMaxIdleConns: z.number().min(0),
+  SensitiveDetectionMaxIdleConnsPerHost: z.number().min(0),
+  SensitiveDetectionRPM: z.number().min(0),
+  SensitiveDetectionCacheEnabled: z.boolean(),
+  SensitiveDetectionCacheTTLSeconds: z.number().min(0),
+  SensitiveDetectionCacheMaxItems: z.number().min(0),
+  SensitiveDetectionBreakerThreshold: z.number().min(0),
+  SensitiveDetectionBreakerCooldownSeconds: z.number().min(0),
 })
 
 type DetectionFormValues = z.infer<typeof detectionSchema>
@@ -98,6 +115,15 @@ type SensitiveWordsSectionProps = {
     SensitiveDetectionAPIKey: string
     SensitiveDetectionPrompt: string
     SensitiveDetectionGroups: string
+    SensitiveDetectionTimeoutSeconds: number
+    SensitiveDetectionMaxIdleConns: number
+    SensitiveDetectionMaxIdleConnsPerHost: number
+    SensitiveDetectionRPM: number
+    SensitiveDetectionCacheEnabled: boolean
+    SensitiveDetectionCacheTTLSeconds: number
+    SensitiveDetectionCacheMaxItems: number
+    SensitiveDetectionBreakerThreshold: number
+    SensitiveDetectionBreakerCooldownSeconds: number
     GroupRatio: string
   }
 }
@@ -400,7 +426,10 @@ export function SensitiveWordsSection({
     queryFn: getSensitiveDetectionChannels,
   })
 
-  const channels = channelsQuery.data?.data ?? []
+  const channels = useMemo(
+    () => channelsQuery.data?.data ?? [],
+    [channelsQuery.data]
+  )
   const selectedChannelIds = useMemo(
     () =>
       channels
@@ -417,6 +446,22 @@ export function SensitiveWordsSection({
       SensitiveDetectionPrompt: defaultValues.SensitiveDetectionPrompt || '',
       SensitiveDetectionGroups: selectedGroups,
       SensitiveDetectionChannelIDs: selectedChannelIds,
+      SensitiveDetectionTimeoutSeconds:
+        defaultValues.SensitiveDetectionTimeoutSeconds,
+      SensitiveDetectionMaxIdleConns: defaultValues.SensitiveDetectionMaxIdleConns,
+      SensitiveDetectionMaxIdleConnsPerHost:
+        defaultValues.SensitiveDetectionMaxIdleConnsPerHost,
+      SensitiveDetectionRPM: defaultValues.SensitiveDetectionRPM,
+      SensitiveDetectionCacheEnabled:
+        defaultValues.SensitiveDetectionCacheEnabled,
+      SensitiveDetectionCacheTTLSeconds:
+        defaultValues.SensitiveDetectionCacheTTLSeconds,
+      SensitiveDetectionCacheMaxItems:
+        defaultValues.SensitiveDetectionCacheMaxItems,
+      SensitiveDetectionBreakerThreshold:
+        defaultValues.SensitiveDetectionBreakerThreshold,
+      SensitiveDetectionBreakerCooldownSeconds:
+        defaultValues.SensitiveDetectionBreakerCooldownSeconds,
     }),
     [defaultValues, selectedGroups, selectedChannelIds]
   )
@@ -462,6 +507,26 @@ export function SensitiveWordsSection({
         }
       }
 
+      const queueNumberUpdate = (
+        key: keyof SensitiveWordsSectionProps['defaultValues'],
+        value: number,
+        current: number
+      ) => {
+        if (value !== current) {
+          updates.push({ key, value: String(value) })
+        }
+      }
+
+      const queueBooleanUpdate = (
+        key: keyof SensitiveWordsSectionProps['defaultValues'],
+        value: boolean,
+        current: boolean
+      ) => {
+        if (value !== current) {
+          updates.push({ key, value: String(value) })
+        }
+      }
+
       queueUpdate(
         'SensitiveDetectionModel',
         values.SensitiveDetectionModel || '',
@@ -476,6 +541,51 @@ export function SensitiveWordsSection({
         'SensitiveDetectionPrompt',
         values.SensitiveDetectionPrompt || '',
         defaultValues.SensitiveDetectionPrompt || ''
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionTimeoutSeconds',
+        values.SensitiveDetectionTimeoutSeconds,
+        defaultValues.SensitiveDetectionTimeoutSeconds
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionMaxIdleConns',
+        values.SensitiveDetectionMaxIdleConns,
+        defaultValues.SensitiveDetectionMaxIdleConns
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionMaxIdleConnsPerHost',
+        values.SensitiveDetectionMaxIdleConnsPerHost,
+        defaultValues.SensitiveDetectionMaxIdleConnsPerHost
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionRPM',
+        values.SensitiveDetectionRPM,
+        defaultValues.SensitiveDetectionRPM
+      )
+      queueBooleanUpdate(
+        'SensitiveDetectionCacheEnabled',
+        values.SensitiveDetectionCacheEnabled,
+        defaultValues.SensitiveDetectionCacheEnabled
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionCacheTTLSeconds',
+        values.SensitiveDetectionCacheTTLSeconds,
+        defaultValues.SensitiveDetectionCacheTTLSeconds
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionCacheMaxItems',
+        values.SensitiveDetectionCacheMaxItems,
+        defaultValues.SensitiveDetectionCacheMaxItems
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionBreakerThreshold',
+        values.SensitiveDetectionBreakerThreshold,
+        defaultValues.SensitiveDetectionBreakerThreshold
+      )
+      queueNumberUpdate(
+        'SensitiveDetectionBreakerCooldownSeconds',
+        values.SensitiveDetectionBreakerCooldownSeconds,
+        defaultValues.SensitiveDetectionBreakerCooldownSeconds
       )
       if (values.SensitiveDetectionAPIKey?.trim()) {
         updates.push({
@@ -518,6 +628,8 @@ export function SensitiveWordsSection({
   })
 
   const stats = statsQuery.data?.data ?? EMPTY_STATS
+
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const scrollToConfig = () => {
     document
@@ -740,6 +852,288 @@ export function SensitiveWordsSection({
                       </FormItem>
                     )}
                   />
+
+                  <Collapsible
+                    open={advancedOpen}
+                    onOpenChange={setAdvancedOpen}
+                    className='border-border bg-muted/20 rounded-lg border'
+                  >
+                    <CollapsibleTrigger className='hover:bg-muted flex w-full items-center justify-between rounded-lg px-4 py-3 text-sm font-medium'>
+                      <span>{t('Advanced / Performance')}</span>
+                      <ChevronDown
+                        className={cn(
+                          'h-4 w-4 transition-transform',
+                          advancedOpen && 'rotate-180'
+                        )}
+                      />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className='space-y-4 p-4'>
+                      <p className='text-muted-foreground text-xs'>
+                        {t(
+                          'Tune throughput and resilience. Enter 0 to disable a limit.'
+                        )}
+                      </p>
+                      <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionTimeoutSeconds'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Detector timeout (seconds)')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'Max wait for one detector call. 0 defaults to 5s.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionRPM'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Detector RPM limit')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'Max detector calls per minute. 0 = unlimited.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionBreakerThreshold'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Breaker failure threshold')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'Consecutive failures before tripping. 0 = disabled.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionBreakerCooldownSeconds'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Breaker cooldown (seconds)')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t(
+                                  'How long the breaker stays open. Failures are forwarded.'
+                                )}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionCacheEnabled'
+                          render={({ field }) => (
+                            <FormItem className='flex flex-row items-center justify-between rounded-lg border p-3'>
+                              <div className='space-y-0.5'>
+                                <FormLabel>{t('Cache results')}</FormLabel>
+                                <FormDescription>
+                                  {t(
+                                    'Reuse verdicts for identical prompts. Blocked results are cached too.'
+                                  )}
+                                </FormDescription>
+                              </div>
+                              <FormControl>
+                                <Switch
+                                  checked={field.value === true}
+                                  onCheckedChange={(checked) =>
+                                    field.onChange(checked === true)
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionCacheTTLSeconds'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Cache TTL (seconds)')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t('How long a cached verdict stays valid.')}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionCacheMaxItems'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Cache capacity (memory)')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t('In-memory LRU size when Redis is unavailable.')}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionMaxIdleConns'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Detector pool: max idle')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t('Global idle connections for the detector client.')}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name='SensitiveDetectionMaxIdleConnsPerHost'
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {t('Detector pool: max per host')}
+                              </FormLabel>
+                              <FormControl>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  step={1}
+                                  value={field.value ?? 0}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      parseInt(e.target.value, 10) || 0
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormDescription>
+                                {t('Idle connections per detector host.')}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </SettingsFormGrid>
               </SettingsForm>
             </Form>

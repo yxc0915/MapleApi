@@ -175,6 +175,15 @@ func InitOptionMap() {
 	common.OptionMap["SensitiveDetectionAPIKey"] = setting.SensitiveDetectionAPIKey
 	common.OptionMap["SensitiveDetectionPrompt"] = setting.SensitiveDetectionPrompt
 	common.OptionMap["SensitiveDetectionGroups"] = setting.SensitiveDetectionGroups2JSONString()
+	common.OptionMap["SensitiveDetectionTimeoutSeconds"] = strconv.Itoa(setting.SensitiveDetectionTimeoutSeconds)
+	common.OptionMap["SensitiveDetectionMaxIdleConns"] = strconv.Itoa(setting.SensitiveDetectionMaxIdleConns)
+	common.OptionMap["SensitiveDetectionMaxIdleConnsPerHost"] = strconv.Itoa(setting.SensitiveDetectionMaxIdleConnsPerHost)
+	common.OptionMap["SensitiveDetectionRPM"] = strconv.Itoa(setting.SensitiveDetectionRPM)
+	common.OptionMap["SensitiveDetectionCacheEnabled"] = strconv.FormatBool(setting.SensitiveDetectionCacheEnabled)
+	common.OptionMap["SensitiveDetectionCacheTTLSeconds"] = strconv.Itoa(setting.SensitiveDetectionCacheTTLSeconds)
+	common.OptionMap["SensitiveDetectionCacheMaxItems"] = strconv.Itoa(setting.SensitiveDetectionCacheMaxItems)
+	common.OptionMap["SensitiveDetectionBreakerThreshold"] = strconv.Itoa(setting.SensitiveDetectionBreakerThreshold)
+	common.OptionMap["SensitiveDetectionBreakerCooldownSeconds"] = strconv.Itoa(setting.SensitiveDetectionBreakerCooldownSeconds)
 	common.OptionMap["StreamCacheQueueLength"] = strconv.Itoa(setting.StreamCacheQueueLength)
 	common.OptionMap["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
@@ -573,6 +582,24 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.SensitiveDetectionPrompt = value
 	case "SensitiveDetectionGroups":
 		err = setting.UpdateSensitiveDetectionGroupsByJSONString(value)
+	case "SensitiveDetectionTimeoutSeconds":
+		setting.SensitiveDetectionTimeoutSeconds, err = strconv.Atoi(value)
+	case "SensitiveDetectionMaxIdleConns":
+		setting.SensitiveDetectionMaxIdleConns, err = strconv.Atoi(value)
+	case "SensitiveDetectionMaxIdleConnsPerHost":
+		setting.SensitiveDetectionMaxIdleConnsPerHost, err = strconv.Atoi(value)
+	case "SensitiveDetectionRPM":
+		setting.SensitiveDetectionRPM, err = strconv.Atoi(value)
+	case "SensitiveDetectionCacheEnabled":
+		setting.SensitiveDetectionCacheEnabled, err = strconv.ParseBool(value)
+	case "SensitiveDetectionCacheTTLSeconds":
+		setting.SensitiveDetectionCacheTTLSeconds, err = strconv.Atoi(value)
+	case "SensitiveDetectionCacheMaxItems":
+		setting.SensitiveDetectionCacheMaxItems, err = strconv.Atoi(value)
+	case "SensitiveDetectionBreakerThreshold":
+		setting.SensitiveDetectionBreakerThreshold, err = strconv.Atoi(value)
+	case "SensitiveDetectionBreakerCooldownSeconds":
+		setting.SensitiveDetectionBreakerCooldownSeconds, err = strconv.Atoi(value)
 	case "AutomaticDisableKeywords":
 		operation_setting.AutomaticDisableKeywordsFromString(value)
 	case "AutomaticDisableStatusCodes":

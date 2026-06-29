@@ -444,6 +444,16 @@ export type SecuritySettings = {
   SensitiveDetectionAPIKey: string
   SensitiveDetectionPrompt: string
   SensitiveDetectionGroups: string
+  // 违规检测性能参数（0 表示无限制/禁用，按字段语义）。
+  SensitiveDetectionTimeoutSeconds: number
+  SensitiveDetectionMaxIdleConns: number
+  SensitiveDetectionMaxIdleConnsPerHost: number
+  SensitiveDetectionRPM: number
+  SensitiveDetectionCacheEnabled: boolean
+  SensitiveDetectionCacheTTLSeconds: number
+  SensitiveDetectionCacheMaxItems: number
+  SensitiveDetectionBreakerThreshold: number
+  SensitiveDetectionBreakerCooldownSeconds: number
   GroupRatio: string
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
