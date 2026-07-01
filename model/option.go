@@ -179,6 +179,9 @@ func InitOptionMap() {
 	common.OptionMap["SensitiveDetectionMaxIdleConns"] = strconv.Itoa(setting.SensitiveDetectionMaxIdleConns)
 	common.OptionMap["SensitiveDetectionMaxIdleConnsPerHost"] = strconv.Itoa(setting.SensitiveDetectionMaxIdleConnsPerHost)
 	common.OptionMap["SensitiveDetectionRPM"] = strconv.Itoa(setting.SensitiveDetectionRPM)
+	common.OptionMap["SensitiveDetectionTokenRPM"] = strconv.Itoa(setting.SensitiveDetectionTokenRPM)
+	common.OptionMap["SensitiveDetectionUserRPM"] = strconv.Itoa(setting.SensitiveDetectionUserRPM)
+	common.OptionMap["SensitiveDetectionMaxRequestRunes"] = strconv.Itoa(setting.SensitiveDetectionMaxRequestRunes)
 	common.OptionMap["SensitiveDetectionCacheEnabled"] = strconv.FormatBool(setting.SensitiveDetectionCacheEnabled)
 	common.OptionMap["SensitiveDetectionCacheTTLSeconds"] = strconv.Itoa(setting.SensitiveDetectionCacheTTLSeconds)
 	common.OptionMap["SensitiveDetectionCacheMaxItems"] = strconv.Itoa(setting.SensitiveDetectionCacheMaxItems)
@@ -590,6 +593,12 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.SensitiveDetectionMaxIdleConnsPerHost, err = strconv.Atoi(value)
 	case "SensitiveDetectionRPM":
 		setting.SensitiveDetectionRPM, err = strconv.Atoi(value)
+	case "SensitiveDetectionTokenRPM":
+		setting.SensitiveDetectionTokenRPM, err = strconv.Atoi(value)
+	case "SensitiveDetectionUserRPM":
+		setting.SensitiveDetectionUserRPM, err = strconv.Atoi(value)
+	case "SensitiveDetectionMaxRequestRunes":
+		setting.SensitiveDetectionMaxRequestRunes, err = strconv.Atoi(value)
 	case "SensitiveDetectionCacheEnabled":
 		setting.SensitiveDetectionCacheEnabled, err = strconv.ParseBool(value)
 	case "SensitiveDetectionCacheTTLSeconds":

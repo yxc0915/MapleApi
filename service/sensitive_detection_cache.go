@@ -15,7 +15,7 @@ import (
 	"github.com/samber/hot"
 )
 
-// 检测结果缓存：相同 (trigger + 用户输入文本) 在 TTL 内直接复用，不再调用检测模型。
+// 检测结果缓存：相同 (检测配置 + trigger + 请求文本) 在 TTL 内直接复用，不再调用检测模型。
 // 仿 model/subscription.go:86-126 的 HybridCache 单例模式：Redis 优先，未启用时回退内存 LRU。
 // 注意：blocked 结果会被缓存——命中即拦截，能在 TTL 内挡住对同一违规 prompt 的重复刷量。
 // error_open 结果不缓存（瞬态故障不应被缓存），下次仍会真实调用检测模型。
@@ -35,7 +35,7 @@ func getSensitiveDetectionCache() *cachex.HybridCache[types.SensitiveDetectionRe
 			capacity = 2048
 		}
 		sensitiveDetectionCache = cachex.NewHybridCache[types.SensitiveDetectionResult](cachex.HybridCacheConfig[types.SensitiveDetectionResult]{
-			Namespace: cachex.Namespace("new-api:sensitive_detection:v1"),
+			Namespace: cachex.Namespace("new-api:sensitive_detection:v2"),
 			Redis:     common.RDB,
 			RedisEnabled: func() bool {
 				return common.RedisEnabled && common.RDB != nil
@@ -59,10 +59,15 @@ func sensitiveDetectionCacheTTLSeconds() int {
 	return 300
 }
 
-// sensitiveDetectionCacheKey 基于 trigger 与用户输入文本生成稳定的缓存 key。
-// 含 trigger 是为了不同触发域（channel/group）的结果互不串用。
+// sensitiveDetectionCacheKey 基于检测配置、trigger 与完整请求文本生成稳定的缓存 key。
+// 请求文本只参与哈希，不作为明文写入 Redis；不截断文本，避免相同前缀不同后缀串用结果。
 func sensitiveDetectionCacheKey(trigger, text string) string {
-	sum := sha256.Sum256([]byte(trigger + "\x1f" + text))
+	fingerprint := strings.Join([]string{
+		strings.TrimSpace(setting.SensitiveDetectionModel),
+		strings.TrimSpace(setting.SensitiveDetectionBaseURL),
+		strings.TrimSpace(setting.SensitiveDetectionPrompt),
+	}, "\x1f")
+	sum := sha256.Sum256([]byte(fingerprint + "\x1e" + trigger + "\x1f" + sensitiveDetectionNormalizeCacheText(text)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -96,16 +101,6 @@ func storeCachedSensitiveDetectionResult(trigger, text string, result types.Sens
 	}
 }
 
-// sensitiveDetectionTrimCacheText 截断过长的用户输入，避免缓存 key 计算与存储浪费。
-// 与 service 侧的截断策略保持一致（取前 512 个 rune）。
-func sensitiveDetectionTrimCacheText(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return ""
-	}
-	runes := []rune(text)
-	if len(runes) > 512 {
-		return string(runes[:512])
-	}
-	return text
+func sensitiveDetectionNormalizeCacheText(text string) string {
+	return strings.TrimSpace(text)
 }

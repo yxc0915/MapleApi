@@ -9,8 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/common/limiter"
@@ -66,8 +68,9 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		return nil
 	}
 
-	text, ok := LatestUserPromptForSensitiveDetection(request)
-	if !ok || strings.TrimSpace(text) == "" {
+	text, ok := SensitiveDetectionRequestText(request)
+	text = strings.TrimSpace(text)
+	if !ok || text == "" {
 		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
 			Status:  types.SensitiveDetectionStatusBypassed,
 			Trigger: trigger,
@@ -76,8 +79,12 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		return nil
 	}
 
+	if apiErr := rejectOversizedSensitiveDetectionText(c, trigger, text); apiErr != nil {
+		return apiErr
+	}
+
 	// 缓存命中（allowed/blocked）直接复用，不再调用检测模型、也不消耗熔断/限流配额。
-	if cached, found := loadCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text)); found {
+	if cached, found := loadCachedSensitiveDetectionResult(trigger, text); found {
 		cached.Trigger = trigger
 		cached.Checked = true
 		setSensitiveDetectionResult(c, cached)
@@ -102,6 +109,10 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		})
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 		return nil
+	}
+
+	if apiErr := enforceSensitiveDetectionSubjectRateLimit(c, trigger); apiErr != nil {
+		return apiErr
 	}
 
 	// 限流：超过配置的 RPM 上限时放行（不检测），避免把检测模型打爆。
@@ -135,14 +146,14 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 
 	if result.DetectorStatus == http.StatusOK {
 		result.Status = types.SensitiveDetectionStatusAllowed
-		storeCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text), result)
+		storeCachedSensitiveDetectionResult(trigger, text, result)
 		setSensitiveDetectionResult(c, result)
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 		return nil
 	}
 
 	result.Status = types.SensitiveDetectionStatusBlocked
-	storeCachedSensitiveDetectionResult(trigger, sensitiveDetectionTrimCacheText(text), result)
+	storeCachedSensitiveDetectionResult(trigger, text, result)
 	setSensitiveDetectionResult(c, result)
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 	reason := result.Reason
@@ -153,15 +164,19 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 }
 
 func LatestUserPromptForSensitiveDetection(request dto.Request) (string, bool) {
+	return SensitiveDetectionRequestText(request)
+}
+
+func SensitiveDetectionRequestText(request dto.Request) (string, bool) {
 	switch r := request.(type) {
 	case *dto.GeneralOpenAIRequest:
-		return latestOpenAIUserMessage(r)
+		return openAIRequestText(r)
 	case *dto.OpenAIResponsesRequest:
-		return latestResponsesUserInput(r)
+		return responsesRequestText(r)
 	case *dto.ClaudeRequest:
-		return latestClaudeUserMessage(r)
+		return claudeRequestText(r)
 	case *dto.GeminiChatRequest:
-		return latestGeminiUserContent(r)
+		return geminiRequestText(r)
 	default:
 		return "", false
 	}
@@ -180,6 +195,88 @@ func sensitiveDetectionTrigger(channelEnabled bool, groupEnabled bool) string {
 	return ""
 }
 
+func rejectOversizedSensitiveDetectionText(c *gin.Context, trigger, text string) *types.NewAPIError {
+	maxRunes := setting.SensitiveDetectionMaxRequestRunes
+	if maxRunes <= 0 {
+		return nil
+	}
+	runeCount := utf8.RuneCountInString(text)
+	if runeCount <= maxRunes {
+		return nil
+	}
+	reason := fmt.Sprintf("sensitive_detection_request_too_large: %d>%d runes", runeCount, maxRunes)
+	setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
+		Status:         types.SensitiveDetectionStatusBlocked,
+		Trigger:        trigger,
+		Checked:        true,
+		Reason:         reason,
+		DetectorStatus: http.StatusRequestEntityTooLarge,
+	})
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+	return types.NewErrorWithStatusCode(errors.New("sensitive detection request too large"), types.ErrorCodeInvalidRequest, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+}
+
+func enforceSensitiveDetectionSubjectRateLimit(c *gin.Context, trigger string) *types.NewAPIError {
+	if c == nil {
+		return nil
+	}
+	ctx := context.Background()
+	if c.Request != nil && c.Request.Context() != nil {
+		ctx = c.Request.Context()
+	}
+	if !allowSensitiveDetectionScopedCall(ctx, "token", c.GetInt("token_id"), setting.SensitiveDetectionTokenRPM) {
+		return sensitiveDetectionSubjectRateLimitError(c, trigger, "token")
+	}
+	if !allowSensitiveDetectionScopedCall(ctx, "user", c.GetInt("id"), setting.SensitiveDetectionUserRPM) {
+		return sensitiveDetectionSubjectRateLimitError(c, trigger, "user")
+	}
+	return nil
+}
+
+func allowSensitiveDetectionScopedCall(ctx context.Context, scope string, id int, rpm int) bool {
+	if rpm <= 0 || id <= 0 {
+		return true
+	}
+	if !common.RedisEnabled || common.RDB == nil {
+		return true
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	limiterInstance := limiter.New(ctx, common.RDB)
+	allowed, err := limiterInstance.Allow(ctx, fmt.Sprintf("sensitive_detection:%s_rpm:%d", scope, id),
+		limiter.WithCapacity(int64(rpm)),
+		limiter.WithRate(sensitiveDetectionRateLimitRefill(rpm)),
+		limiter.WithRequested(1),
+	)
+	if err != nil {
+		logger.LogWarn(ctx, fmt.Sprintf("sensitive detection %s rate limiter error (fail-open): %s", scope, err.Error()))
+		return true
+	}
+	return allowed
+}
+
+func sensitiveDetectionRateLimitRefill(rpm int) int64 {
+	refill := rpm / 60
+	if refill < 1 {
+		refill = 1
+	}
+	return int64(refill)
+}
+
+func sensitiveDetectionSubjectRateLimitError(c *gin.Context, trigger, scope string) *types.NewAPIError {
+	reason := "sensitive_detection_" + scope + "_rate_limited"
+	setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
+		Status:         types.SensitiveDetectionStatusBlocked,
+		Trigger:        trigger,
+		Checked:        true,
+		Reason:         reason,
+		DetectorStatus: http.StatusTooManyRequests,
+	})
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+	return types.NewErrorWithStatusCode(errors.New("sensitive detection rate limit exceeded"), types.ErrorCodeRateLimitExceeded, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+}
+
 // allowSensitiveDetectionCall 基于 Redis 令牌桶对发往检测模型的调用做 RPM 限流。
 // 返回 false 表示当前已超限，调用方应 fail-open 放行（不检测、不拦截）。
 // 限流策略为 fail-open：配置为 0（无限）、Redis 未启用、或限流器自身出错时一律放行。
@@ -195,16 +292,10 @@ func allowSensitiveDetectionCall(ctx context.Context) bool {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// RPM -> 令牌桶：容量取 rpm（允许短时间内用满一分钟预算的突发），
-	// 补充速率为 rpm/60（向上取整，至少 1）token/秒，稳态下约等于每分钟 rpm 次。
-	refill := rpm / 60
-	if refill < 1 {
-		refill = 1
-	}
 	limiterInstance := limiter.New(ctx, common.RDB)
 	allowed, err := limiterInstance.Allow(ctx, "sensitive_detection:rpm",
 		limiter.WithCapacity(int64(rpm)),
-		limiter.WithRate(int64(refill)),
+		limiter.WithRate(sensitiveDetectionRateLimitRefill(rpm)),
 		limiter.WithRequested(1),
 	)
 	if err != nil {
@@ -226,9 +317,10 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 			{Role: "system", Content: setting.SensitiveDetectionPrompt},
 			{Role: "user", Content: text},
 		},
-		Temperature:    &temperature,
-		Stream:         false,
-		ResponseFormat: map[string]string{"type": "json_object"},
+		Temperature: &temperature,
+		Stream:      false,
+		// 不强制 response_format=json_object：提示词可能要求模型返回裸状态码（如 "200"），
+		// 由提示词自行控制返回格式；解析层同时兼容 JSON 与裸整数两种返回。
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {
@@ -276,21 +368,58 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 		return types.SensitiveDetectionResult{}, errors.New("detector returned empty content")
 	}
 
+	// 优先按 JSON 对象解析（含 status 字段，可携带 reason/objects 等详情）。
+	// 失败时回退到裸整数解析：模型可直接返回 "200" / "499" 这样的纯状态码，
+	// 此时没有 reason/objects，仅依据数字判定放行或拦截。
+	if status, objects, reason, ok := parseSensitiveDetectionJSON(content); ok {
+		return types.SensitiveDetectionResult{
+			DetectorStatus: status,
+			Objects:        objects,
+			Reason:         reason,
+		}, nil
+	}
+	if status, ok := parseSensitiveDetectionRawInt(content); ok {
+		return types.SensitiveDetectionResult{
+			DetectorStatus: status,
+		}, nil
+	}
+	return types.SensitiveDetectionResult{}, errors.New("detector content is neither JSON with status nor a bare status integer")
+}
+
+// parseSensitiveDetectionJSON 尝试把 content 当 JSON 对象解析并读取 status 字段。
+// 成功返回 (status, objects, reason, true)；不是合法 JSON 或缺少 status 返回 (_, "", "", false)。
+func parseSensitiveDetectionJSON(content string) (int, string, string, bool) {
 	var detectorJSON map[string]any
 	if err := common.UnmarshalJsonStr(content, &detectorJSON); err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return 0, "", "", false
 	}
-
 	status, ok := sensitiveDetectionStatusValue(detectorJSON["status"])
 	if !ok {
-		return types.SensitiveDetectionResult{}, errors.New("detector JSON missing numeric status")
+		return 0, "", "", false
 	}
+	return status, sensitiveDetectionObjects(detectorJSON), sensitiveDetectionReason(detectorJSON), true
+}
 
-	return types.SensitiveDetectionResult{
-		DetectorStatus: status,
-		Objects:        sensitiveDetectionObjects(detectorJSON),
-		Reason:         sensitiveDetectionReason(detectorJSON),
-	}, nil
+// parseSensitiveDetectionRawInt 尝试把 content 当裸状态码整数解析。
+// 兼容 "200"、"499"、以及前后偶发的空白/标点（如 "200." 或 "Status: 200"）。
+func parseSensitiveDetectionRawInt(content string) (int, bool) {
+	// 先去掉常见的前缀文字与首尾标点，提取末尾的数字串。
+	trimmed := strings.Trim(strings.TrimSpace(content), ".;,:。；，： \n\r\t")
+	if trimmed == "" {
+		return 0, false
+	}
+	// 取最后一段连续数字（处理 "Status: 200" 这类），但纯数字直接解析。
+	fields := strings.Fields(trimmed)
+	candidate := trimmed
+	if len(fields) > 0 {
+		candidate = fields[len(fields)-1]
+	}
+	candidate = strings.Trim(candidate, ".;,:。；，：")
+	status, err := strconv.Atoi(candidate)
+	if err != nil {
+		return 0, false
+	}
+	return status, true
 }
 
 func sensitiveDetectionURL(baseURL string) string {
@@ -356,18 +485,36 @@ func truncateSensitiveDetectionText(text string, maxRunes int) string {
 	return string(runes[:maxRunes])
 }
 
-func latestOpenAIUserMessage(request *dto.GeneralOpenAIRequest) (string, bool) {
-	for i := len(request.Messages) - 1; i >= 0; i-- {
-		message := request.Messages[i]
-		if message.Role != "user" {
-			continue
-		}
+func openAIRequestText(request *dto.GeneralOpenAIRequest) (string, bool) {
+	parts := make([]string, 0, len(request.Messages)+4)
+	appendSensitiveDetectionAnyText(&parts, "prompt", request.Prompt)
+	appendSensitiveDetectionAnyText(&parts, "input", request.Input)
+	appendSensitiveDetectionText(&parts, "instruction", request.Instruction)
+	appendSensitiveDetectionAnyText(&parts, "prefix", request.Prefix)
+	appendSensitiveDetectionAnyText(&parts, "suffix", request.Suffix)
+	for _, message := range request.Messages {
 		text := openAIMessageText(&message)
-		if strings.TrimSpace(text) != "" {
-			return text, true
+		appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(message.Role), text)
+		if message.ReasoningContent != nil {
+			appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(message.Role)+".reasoning_content", *message.ReasoningContent)
+		}
+		if message.Reasoning != nil {
+			appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(message.Role)+".reasoning", *message.Reasoning)
+		}
+		appendSensitiveDetectionRawJSONText(&parts, sensitiveDetectionRoleLabel(message.Role)+".tool_calls", message.ToolCalls)
+	}
+	if len(request.Functions) > 0 {
+		appendSensitiveDetectionRawJSONText(&parts, "functions", request.Functions)
+	}
+	if len(request.FunctionCall) > 0 {
+		appendSensitiveDetectionRawJSONText(&parts, "function_call", request.FunctionCall)
+	}
+	if len(request.Tools) > 0 {
+		if data, err := common.Marshal(request.Tools); err == nil {
+			appendSensitiveDetectionText(&parts, "tools", string(data))
 		}
 	}
-	return "", false
+	return sensitiveDetectionJoinedText(parts)
 }
 
 func openAIMessageText(message *dto.Message) string {
@@ -383,42 +530,40 @@ func openAIMessageText(message *dto.Message) string {
 	return strings.Join(parts, "\n")
 }
 
-func latestResponsesUserInput(request *dto.OpenAIResponsesRequest) (string, bool) {
+func responsesRequestText(request *dto.OpenAIResponsesRequest) (string, bool) {
+	parts := make([]string, 0)
+	appendSensitiveDetectionRawJSONText(&parts, "instructions", request.Instructions)
+	appendSensitiveDetectionRawJSONText(&parts, "prompt", request.Prompt)
+	appendSensitiveDetectionRawJSONText(&parts, "tools", request.Tools)
+	appendSensitiveDetectionRawJSONText(&parts, "tool_choice", request.ToolChoice)
 	if request.Input == nil {
-		return "", false
+		return sensitiveDetectionJoinedText(parts)
 	}
 	if common.GetJsonType(request.Input) == "string" {
 		var text string
-		if err := common.Unmarshal(request.Input, &text); err == nil && strings.TrimSpace(text) != "" {
-			return text, true
+		if err := common.Unmarshal(request.Input, &text); err == nil {
+			appendSensitiveDetectionText(&parts, "input", text)
 		}
-		return "", false
+		return sensitiveDetectionJoinedText(parts)
 	}
 	if common.GetJsonType(request.Input) != "array" {
-		return "", false
+		appendSensitiveDetectionRawJSONText(&parts, "input", request.Input)
+		return sensitiveDetectionJoinedText(parts)
 	}
 
 	var inputs []dto.Input
 	if err := common.Unmarshal(request.Input, &inputs); err != nil {
-		return "", false
+		appendSensitiveDetectionRawJSONText(&parts, "input", request.Input)
+		return sensitiveDetectionJoinedText(parts)
 	}
-	fallback := ""
-	for i := len(inputs) - 1; i >= 0; i-- {
-		text := responsesInputText(inputs[i].Content)
-		if strings.TrimSpace(text) == "" {
-			continue
+	for _, input := range inputs {
+		label := input.Role
+		if label == "" {
+			label = input.Type
 		}
-		if inputs[i].Role == "user" {
-			return text, true
-		}
-		if fallback == "" {
-			fallback = text
-		}
+		appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(label), responsesInputText(input.Content))
 	}
-	if fallback != "" {
-		return fallback, true
-	}
-	return "", false
+	return sensitiveDetectionJoinedText(parts)
 }
 
 func responsesInputText(content json.RawMessage) string {
@@ -447,18 +592,33 @@ func responsesInputText(content json.RawMessage) string {
 	return ""
 }
 
-func latestClaudeUserMessage(request *dto.ClaudeRequest) (string, bool) {
-	for i := len(request.Messages) - 1; i >= 0; i-- {
-		message := request.Messages[i]
-		if message.Role != "user" {
-			continue
-		}
+func claudeRequestText(request *dto.ClaudeRequest) (string, bool) {
+	parts := make([]string, 0, len(request.Messages)+3)
+	appendSensitiveDetectionText(&parts, "prompt", request.Prompt)
+	appendSensitiveDetectionText(&parts, "system", claudeSystemText(request))
+	appendSensitiveDetectionAnyText(&parts, "tools", request.Tools)
+	appendSensitiveDetectionAnyText(&parts, "tool_choice", request.ToolChoice)
+	for _, message := range request.Messages {
 		text := claudeMessageText(&message)
-		if strings.TrimSpace(text) != "" {
-			return text, true
+		appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(message.Role), text)
+	}
+	return sensitiveDetectionJoinedText(parts)
+}
+
+func claudeSystemText(request *dto.ClaudeRequest) string {
+	if request == nil || request.System == nil {
+		return ""
+	}
+	if request.IsStringSystem() {
+		return request.GetStringSystem()
+	}
+	parts := make([]string, 0)
+	for _, part := range request.ParseSystem() {
+		if part.Type == "text" {
+			appendSensitiveDetectionText(&parts, "", part.GetText())
 		}
 	}
-	return "", false
+	return strings.Join(parts, "\n")
 }
 
 func claudeMessageText(message *dto.ClaudeMessage) string {
@@ -471,29 +631,132 @@ func claudeMessageText(message *dto.ClaudeMessage) string {
 	content, _ := message.ParseContent()
 	parts := make([]string, 0)
 	for _, part := range content {
-		if part.Type == "text" && part.GetText() != "" {
+		switch part.Type {
+		case "text":
 			parts = append(parts, part.GetText())
+		case "tool_use":
+			appendSensitiveDetectionText(&parts, "tool_use.name", part.Name)
+			appendSensitiveDetectionAnyText(&parts, "tool_use.input", part.Input)
+		case "tool_result":
+			appendSensitiveDetectionAnyText(&parts, "tool_result.content", part.Content)
 		}
 	}
 	return strings.Join(parts, "\n")
 }
 
-func latestGeminiUserContent(request *dto.GeminiChatRequest) (string, bool) {
-	for i := len(request.Contents) - 1; i >= 0; i-- {
-		content := request.Contents[i]
-		if content.Role != "" && content.Role != "user" {
-			continue
+func geminiRequestText(request *dto.GeminiChatRequest) (string, bool) {
+	parts := make([]string, 0, len(request.Contents)+1)
+	if request.SystemInstructions != nil {
+		appendSensitiveDetectionText(&parts, "system", geminiContentText(request.SystemInstructions))
+	}
+	for _, content := range request.Contents {
+		appendSensitiveDetectionText(&parts, sensitiveDetectionRoleLabel(content.Role), geminiContentText(&content))
+	}
+	appendSensitiveDetectionRawJSONText(&parts, "tools", request.Tools)
+	return sensitiveDetectionJoinedText(parts)
+}
+
+func geminiContentText(content *dto.GeminiChatContent) string {
+	if content == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(content.Parts))
+	for _, part := range content.Parts {
+		appendSensitiveDetectionText(&parts, "", part.Text)
+		if part.FunctionCall != nil {
+			appendSensitiveDetectionAnyText(&parts, "function_call", part.FunctionCall)
 		}
-		parts := make([]string, 0)
-		for _, part := range content.Parts {
-			if part.Text != "" {
-				parts = append(parts, part.Text)
-			}
+		if part.FunctionResponse != nil {
+			appendSensitiveDetectionAnyText(&parts, "function_response", part.FunctionResponse)
 		}
-		text := strings.Join(parts, "\n")
-		if strings.TrimSpace(text) != "" {
-			return text, true
+		if part.ExecutableCode != nil {
+			appendSensitiveDetectionAnyText(&parts, "executable_code", part.ExecutableCode)
+		}
+		if part.CodeExecutionResult != nil {
+			appendSensitiveDetectionAnyText(&parts, "code_execution_result", part.CodeExecutionResult)
 		}
 	}
-	return "", false
+	return strings.Join(parts, "\n")
+}
+
+func appendSensitiveDetectionText(parts *[]string, label string, text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	label = strings.TrimSpace(label)
+	if label == "" {
+		*parts = append(*parts, text)
+		return
+	}
+	*parts = append(*parts, label+":\n"+text)
+}
+
+func appendSensitiveDetectionAnyText(parts *[]string, label string, value any) {
+	appendSensitiveDetectionText(parts, label, sensitiveDetectionAnyText(value))
+}
+
+func appendSensitiveDetectionRawJSONText(parts *[]string, label string, raw json.RawMessage) {
+	appendSensitiveDetectionText(parts, label, sensitiveDetectionRawJSONText(raw))
+}
+
+func sensitiveDetectionAnyText(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case json.RawMessage:
+		return sensitiveDetectionRawJSONText(v)
+	case []string:
+		return strings.Join(v, "\n")
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			appendSensitiveDetectionText(&parts, "", sensitiveDetectionAnyText(item))
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			appendSensitiveDetectionText(&parts, key, sensitiveDetectionAnyText(v[key]))
+		}
+		return strings.Join(parts, "\n")
+	default:
+		if data, err := common.Marshal(value); err == nil {
+			return sensitiveDetectionRawJSONText(json.RawMessage(data))
+		}
+		return fmt.Sprintf("%v", value)
+	}
+}
+
+func sensitiveDetectionRawJSONText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	if common.GetJsonType(raw) == "string" {
+		var text string
+		if err := common.Unmarshal(raw, &text); err == nil {
+			return text
+		}
+	}
+	return string(raw)
+}
+
+func sensitiveDetectionRoleLabel(role string) string {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "message"
+	}
+	return role
+}
+
+func sensitiveDetectionJoinedText(parts []string) (string, bool) {
+	text := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	return text, text != ""
 }

@@ -6,10 +6,12 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -82,6 +84,23 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestGetChannelPreservesContextOtherSettingsBeforeRelayMeta(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("channel_id", 1)
+	ctx.Set("channel_type", 1)
+	ctx.Set("channel_name", "CPA")
+	common.SetContextKey(ctx, constant.ContextKeyChannelOtherSetting, dto.ChannelOtherSettings{
+		SensitiveDetectionEnabled: true,
+	})
+
+	channel, err := getChannel(ctx, &relaycommon.RelayInfo{}, &service.RetryParam{})
+
+	require.Nil(t, err)
+	require.NotNil(t, channel)
+	require.True(t, selectedChannelSensitiveDetectionEnabled(channel, &relaycommon.RelayInfo{}))
 }
 
 func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *testing.T) {
