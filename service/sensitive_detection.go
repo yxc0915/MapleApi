@@ -34,7 +34,10 @@ type sensitiveDetectionRequest struct {
 	Model          string                      `json:"model"`
 	Messages       []sensitiveDetectionMessage `json:"messages"`
 	Temperature    *float64                    `json:"temperature,omitempty"`
+	MaxTokens      *int                        `json:"max_tokens,omitempty"`
 	Stream         bool                        `json:"stream"`
+	Thinking       map[string]string           `json:"thinking,omitempty"`
+	DoSample       *bool                       `json:"do_sample,omitempty"`
 	ResponseFormat map[string]string           `json:"response_format,omitempty"`
 }
 
@@ -350,6 +353,7 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 
 func callSensitiveDetectionModelWithConfig(ctx context.Context, config SensitiveDetectionConnectionTestConfig, text string) (types.SensitiveDetectionResult, error) {
 	temperature := 0.0
+	maxTokens := 8
 	payload := sensitiveDetectionRequest{
 		Model: strings.TrimSpace(config.Model),
 		Messages: []sensitiveDetectionMessage{
@@ -357,9 +361,15 @@ func callSensitiveDetectionModelWithConfig(ctx context.Context, config Sensitive
 			{Role: "user", Content: text},
 		},
 		Temperature: &temperature,
+		MaxTokens:   &maxTokens,
 		Stream:      false,
 		// 不强制 response_format=json_object：提示词可能要求模型返回裸状态码（如 "200"），
 		// 由提示词自行控制返回格式；解析层同时兼容 JSON 与裸整数两种返回。
+	}
+	if sensitiveDetectionUsesBigModelHints(config.BaseURL, config.Model) {
+		doSample := false
+		payload.Thinking = map[string]string{"type": "disabled"}
+		payload.DoSample = &doSample
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {
@@ -425,6 +435,18 @@ func callSensitiveDetectionModelWithConfig(ctx context.Context, config Sensitive
 	return types.SensitiveDetectionResult{}, errors.New("detector content is neither JSON with status nor a bare status integer")
 }
 
+func sensitiveDetectionUsesBigModelHints(baseURL, model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if strings.HasPrefix(model, "glm-") {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(parsed.Hostname()), "bigmodel.cn")
+}
+
 // parseSensitiveDetectionJSON 尝试把 content 当 JSON 对象解析并读取 status 字段。
 // 成功返回 (status, objects, reason, true)；不是合法 JSON 或缺少 status 返回 (_, "", "", false)。
 func parseSensitiveDetectionJSON(content string) (int, string, string, bool) {
@@ -470,7 +492,11 @@ func sensitiveDetectionURL(baseURL string) string {
 	if err != nil {
 		return baseURL + "/v1/chat/completions"
 	}
-	if strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/v1") {
+	path := strings.TrimRight(parsed.Path, "/")
+	if strings.HasSuffix(path, "/chat/completions") {
+		return baseURL
+	}
+	if strings.HasSuffix(path, "/v1") || strings.HasSuffix(path, "/v4") {
 		return baseURL + "/chat/completions"
 	}
 	return baseURL + "/v1/chat/completions"

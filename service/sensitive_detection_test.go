@@ -77,6 +77,9 @@ func TestSensitiveDetectionConnectionUsesProvidedConfig(t *testing.T) {
 		var payload sensitiveDetectionRequest
 		require.NoError(t, common.DecodeJson(r.Body, &payload))
 		require.Equal(t, "connection-model", payload.Model)
+		require.NotNil(t, payload.MaxTokens)
+		require.Equal(t, 8, *payload.MaxTokens)
+		require.Empty(t, payload.Thinking)
 		require.Len(t, payload.Messages, 2)
 		require.Equal(t, "temporary prompt", payload.Messages[0].Content)
 		require.Contains(t, payload.Messages[1].Content, "connectivity test")
@@ -95,6 +98,72 @@ func TestSensitiveDetectionConnectionUsesProvidedConfig(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, result.DetectorStatus)
+}
+
+func TestSensitiveDetectionConnectionDisablesBigModelThinking(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload sensitiveDetectionRequest
+		require.NoError(t, common.DecodeJson(r.Body, &payload))
+		require.Equal(t, "glm-4.7-flash", payload.Model)
+		require.Equal(t, map[string]string{"type": "disabled"}, payload.Thinking)
+		require.NotNil(t, payload.DoSample)
+		assert.False(t, *payload.DoSample)
+		require.NotNil(t, payload.MaxTokens)
+		assert.Equal(t, 8, *payload.MaxTokens)
+		writeSensitiveDetectionResponse(t, w, "200")
+	}))
+	defer server.Close()
+
+	result, err := TestSensitiveDetectionConnection(context.Background(), SensitiveDetectionConnectionTestConfig{
+		Model:          "glm-4.7-flash",
+		BaseURL:        server.URL,
+		APIKey:         "connection-key",
+		Prompt:         "temporary prompt",
+		TimeoutSeconds: 5,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, result.DetectorStatus)
+}
+
+func TestSensitiveDetectionURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		baseURL string
+		want    string
+	}{
+		{
+			name:    "empty defaults to openai path",
+			baseURL: "",
+			want:    "/v1/chat/completions",
+		},
+		{
+			name:    "host root gets openai v1 path",
+			baseURL: "https://example.com",
+			want:    "https://example.com/v1/chat/completions",
+		},
+		{
+			name:    "openai v1 base appends chat completions",
+			baseURL: "https://example.com/v1",
+			want:    "https://example.com/v1/chat/completions",
+		},
+		{
+			name:    "bigmodel v4 base appends chat completions without v1",
+			baseURL: "https://open.bigmodel.cn/api/paas/v4",
+			want:    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+		},
+		{
+			name:    "full chat completions endpoint is preserved",
+			baseURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+			want:    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, sensitiveDetectionURL(tt.baseURL))
+		})
+	}
 }
 
 func TestEvaluateSensitiveDetectionBlocksNon200DetectorStatus(t *testing.T) {
