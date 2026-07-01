@@ -1332,6 +1332,7 @@
     "Detector model ID": "ID du modele detecteur",
     "Detector pool: max idle": "Pool du détecteur : connexions inactives max",
     "Detector pool: max per host": "Pool du détecteur : max par hôte",
+    "Detector returned status {{status}}.": "Le détecteur a renvoyé l’état {{status}}.",
     "Detector RPM limit": "Limite RPM du détecteur",
     "Detector Status": "Statut du detecteur",
     "Detector timeout (seconds)": "Délai du détecteur (secondes)",

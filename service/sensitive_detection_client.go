@@ -57,7 +57,10 @@ func getSensitiveDetectionClient() *http.Client {
 // sensitiveDetectionTimeoutDuration 读取运行时配置的单次检测超时。
 // 配置为 0 或负数时回退到 5 秒，避免无超时把 goroutine/连接槽长期挂住。
 func sensitiveDetectionTimeoutDuration() time.Duration {
-	seconds := setting.SensitiveDetectionTimeoutSeconds
+	return sensitiveDetectionTimeoutDurationForSeconds(setting.SensitiveDetectionTimeoutSeconds)
+}
+
+func sensitiveDetectionTimeoutDurationForSeconds(seconds int) time.Duration {
 	if seconds <= 0 {
 		seconds = 5
 	}

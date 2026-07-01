@@ -24,6 +24,8 @@ import type {
   LogCleanupTask,
   SensitiveDetectionChannelsResponse,
   SensitiveDetectionStatsResponse,
+  SensitiveDetectionTestRequest,
+  SensitiveDetectionTestResponse,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskResponse,
@@ -68,6 +70,21 @@ export async function updateSensitiveDetectionChannels(
     {
       enabled_channel_ids: enabledChannelIds,
     }
+  )
+  return res.data
+}
+
+export async function testSensitiveDetectionConnection(
+  request: SensitiveDetectionTestRequest
+) {
+  const config = {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  } as unknown as Parameters<typeof api.post>[2]
+  const res = await api.post<SensitiveDetectionTestResponse>(
+    '/api/option/sensitive_detection/test',
+    request,
+    config
   )
   return res.data
 }

@@ -1332,6 +1332,7 @@
     "Detector model ID": "ID модели детектора",
     "Detector pool: max idle": "Пул детектора: макс. простаивающих",
     "Detector pool: max per host": "Пул детектора: макс. на хост",
+    "Detector returned status {{status}}.": "Детектор вернул статус {{status}}.",
     "Detector RPM limit": "Лимит RPM детектора",
     "Detector Status": "Статус детектора",
     "Detector timeout (seconds)": "Тайм-аут детектора (секунды)",

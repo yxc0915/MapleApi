@@ -1332,6 +1332,7 @@
     "Detector model ID": "Detector model ID",
     "Detector pool: max idle": "Detector pool: max idle",
     "Detector pool: max per host": "Detector pool: max per host",
+    "Detector returned status {{status}}.": "Detector returned status {{status}}.",
     "Detector RPM limit": "Detector RPM limit",
     "Detector Status": "Detector Status",
     "Detector timeout (seconds)": "Detector timeout (seconds)",

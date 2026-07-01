@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,6 +67,34 @@ func TestEvaluateSensitiveDetectionScopeAndSingleCall(t *testing.T) {
 	err = EvaluateSensitiveDetection(c, newSensitiveDetectionOpenAIRequest(), true, true)
 	require.Nil(t, err)
 	assert.Equal(t, 2, callCount)
+}
+
+func TestSensitiveDetectionConnectionUsesProvidedConfig(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/v1/chat/completions", r.URL.Path)
+		require.Equal(t, "Bearer connection-key", r.Header.Get("Authorization"))
+
+		var payload sensitiveDetectionRequest
+		require.NoError(t, common.DecodeJson(r.Body, &payload))
+		require.Equal(t, "connection-model", payload.Model)
+		require.Len(t, payload.Messages, 2)
+		require.Equal(t, "temporary prompt", payload.Messages[0].Content)
+		require.Contains(t, payload.Messages[1].Content, "connectivity test")
+
+		writeSensitiveDetectionResponse(t, w, "200")
+	}))
+	defer server.Close()
+
+	result, err := TestSensitiveDetectionConnection(context.Background(), SensitiveDetectionConnectionTestConfig{
+		Model:          "connection-model",
+		BaseURL:        server.URL,
+		APIKey:         "connection-key",
+		Prompt:         "temporary prompt",
+		TimeoutSeconds: 5,
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, result.DetectorStatus)
 }
 
 func TestEvaluateSensitiveDetectionBlocksNon200DetectorStatus(t *testing.T) {

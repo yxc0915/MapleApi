@@ -46,6 +46,14 @@ type sensitiveDetectionResponse struct {
 	Choices []sensitiveDetectionChoice `json:"choices"`
 }
 
+type SensitiveDetectionConnectionTestConfig struct {
+	Model          string
+	BaseURL        string
+	APIKey         string
+	Prompt         string
+	TimeoutSeconds int
+}
+
 func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnabled bool, groupEnabled bool) *types.NewAPIError {
 	if common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionDone) {
 		return nil
@@ -161,6 +169,22 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		reason = "prompt blocked by sensitive detection"
 	}
 	return types.NewErrorWithStatusCode(errors.New(reason), types.ErrorCodePromptBlocked, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+}
+
+func TestSensitiveDetectionConnection(ctx context.Context, config SensitiveDetectionConnectionTestConfig) (types.SensitiveDetectionResult, error) {
+	if strings.TrimSpace(config.Model) == "" {
+		return types.SensitiveDetectionResult{}, errors.New("detector model is required")
+	}
+	if strings.TrimSpace(config.BaseURL) == "" {
+		return types.SensitiveDetectionResult{}, errors.New("detector base url is required")
+	}
+	if strings.TrimSpace(config.APIKey) == "" {
+		return types.SensitiveDetectionResult{}, errors.New("detector api key is required")
+	}
+	if strings.TrimSpace(config.Prompt) == "" {
+		return types.SensitiveDetectionResult{}, errors.New("detector prompt is required")
+	}
+	return callSensitiveDetectionModelWithConfig(ctx, config, "This is a connectivity test request.")
 }
 
 func LatestUserPromptForSensitiveDetection(request dto.Request) (string, bool) {
@@ -310,11 +334,26 @@ func setSensitiveDetectionResult(c *gin.Context, result types.SensitiveDetection
 }
 
 func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDetectionResult, error) {
+	config := SensitiveDetectionConnectionTestConfig{
+		Model:          setting.SensitiveDetectionModel,
+		BaseURL:        setting.SensitiveDetectionBaseURL,
+		APIKey:         setting.SensitiveDetectionAPIKey,
+		Prompt:         setting.SensitiveDetectionPrompt,
+		TimeoutSeconds: setting.SensitiveDetectionTimeoutSeconds,
+	}
+	ctx := context.Background()
+	if c != nil && c.Request != nil && c.Request.Context() != nil {
+		ctx = c.Request.Context()
+	}
+	return callSensitiveDetectionModelWithConfig(ctx, config, text)
+}
+
+func callSensitiveDetectionModelWithConfig(ctx context.Context, config SensitiveDetectionConnectionTestConfig, text string) (types.SensitiveDetectionResult, error) {
 	temperature := 0.0
 	payload := sensitiveDetectionRequest{
-		Model: strings.TrimSpace(setting.SensitiveDetectionModel),
+		Model: strings.TrimSpace(config.Model),
 		Messages: []sensitiveDetectionMessage{
-			{Role: "system", Content: setting.SensitiveDetectionPrompt},
+			{Role: "system", Content: config.Prompt},
 			{Role: "user", Content: text},
 		},
 		Temperature: &temperature,
@@ -327,19 +366,19 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 		return types.SensitiveDetectionResult{}, err
 	}
 
-	ctx := c.Request.Context()
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, sensitiveDetectionTimeoutDuration())
+	timeout := sensitiveDetectionTimeoutDurationForSeconds(config.TimeoutSeconds)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sensitiveDetectionURL(setting.SensitiveDetectionBaseURL), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sensitiveDetectionURL(config.BaseURL), bytes.NewReader(body))
 	if err != nil {
 		return types.SensitiveDetectionResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(setting.SensitiveDetectionAPIKey))
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(config.APIKey))
 
 	client := getSensitiveDetectionClient()
 	resp, err := client.Do(req)

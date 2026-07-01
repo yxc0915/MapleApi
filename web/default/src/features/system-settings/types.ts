@@ -106,6 +106,24 @@ export type SensitiveDetectionChannelsResponse = {
   data?: SensitiveDetectionChannel[]
 }
 
+export type SensitiveDetectionTestRequest = {
+  model: string
+  base_url: string
+  api_key?: string
+  prompt: string
+  timeout_seconds: number
+}
+
+export type SensitiveDetectionTestResponse = {
+  success: boolean
+  message: string
+  data?: {
+    detector_status: number
+    objects?: string
+    reason?: string
+  }
+}
+
 export type ConfirmPaymentComplianceResponse = {
   success: boolean
   message: string

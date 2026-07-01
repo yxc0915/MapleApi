@@ -1332,6 +1332,7 @@
     "Detector model ID": "検出モデル ID",
     "Detector pool: max idle": "検出プール：最大アイドル",
     "Detector pool: max per host": "検出プール：ホストあたり上限",
+    "Detector returned status {{status}}.": "検出器がステータス {{status}} を返しました。",
     "Detector RPM limit": "検出 RPM 上限",
     "Detector Status": "検出器ステータス",
     "Detector timeout (seconds)": "検出タイムアウト（秒）",

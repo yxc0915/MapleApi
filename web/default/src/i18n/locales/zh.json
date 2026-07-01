@@ -1332,6 +1332,7 @@
     "Detector model ID": "检测模型 ID",
     "Detector pool: max idle": "检测连接池：最大空闲连接",
     "Detector pool: max per host": "检测连接池：单 host 上限",
+    "Detector returned status {{status}}.": "检测器返回状态 {{status}}。",
     "Detector RPM limit": "检测 RPM 上限",
     "Detector Status": "检测器状态码",
     "Detector timeout (seconds)": "检测超时（秒）",

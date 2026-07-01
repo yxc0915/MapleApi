@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -135,6 +136,14 @@ type SensitiveDetectionChannelsUpdateRequest struct {
 	EnabledChannelIDs []int `json:"enabled_channel_ids"`
 }
 
+type SensitiveDetectionTestRequest struct {
+	Model          string `json:"model"`
+	BaseURL        string `json:"base_url"`
+	APIKey         string `json:"api_key"`
+	Prompt         string `json:"prompt"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+}
+
 func UpdateSensitiveDetectionChannels(c *gin.Context) {
 	var req SensitiveDetectionChannelsUpdateRequest
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
@@ -152,6 +161,51 @@ func UpdateSensitiveDetectionChannels(c *gin.Context) {
 		"count": len(req.EnabledChannelIDs),
 	})
 	common.ApiSuccess(c, nil)
+}
+
+func TestSensitiveDetectionConnection(c *gin.Context) {
+	var req SensitiveDetectionTestRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": "无效的参数",
+		})
+		return
+	}
+
+	config := service.SensitiveDetectionConnectionTestConfig{
+		Model:          strings.TrimSpace(req.Model),
+		BaseURL:        strings.TrimSpace(req.BaseURL),
+		APIKey:         strings.TrimSpace(req.APIKey),
+		Prompt:         req.Prompt,
+		TimeoutSeconds: req.TimeoutSeconds,
+	}
+	if config.Model == "" {
+		config.Model = setting.SensitiveDetectionModel
+	}
+	if config.BaseURL == "" {
+		config.BaseURL = setting.SensitiveDetectionBaseURL
+	}
+	if strings.TrimSpace(config.APIKey) == "" {
+		config.APIKey = setting.SensitiveDetectionAPIKey
+	}
+	if strings.TrimSpace(config.Prompt) == "" {
+		config.Prompt = setting.SensitiveDetectionPrompt
+	}
+	if config.TimeoutSeconds <= 0 {
+		config.TimeoutSeconds = setting.SensitiveDetectionTimeoutSeconds
+	}
+
+	result, err := service.TestSensitiveDetectionConnection(c.Request.Context(), config)
+	if err != nil {
+		common.ApiErrorMsg(c, err.Error())
+		return
+	}
+	common.ApiSuccess(c, gin.H{
+		"detector_status": result.DetectorStatus,
+		"objects":         result.Objects,
+		"reason":          result.Reason,
+	})
 }
 
 type OptionUpdateRequest struct {

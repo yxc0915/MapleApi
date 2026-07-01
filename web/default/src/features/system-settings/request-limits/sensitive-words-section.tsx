@@ -24,9 +24,12 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleSlash2,
+  Loader2,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
+  XCircle,
 } from 'lucide-react'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
@@ -40,6 +43,7 @@ import {
   type Option as MultiSelectOption,
 } from '@/components/multi-select'
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -65,12 +69,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 import { formatTimestampToDate } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 import {
   getSensitiveDetectionChannels,
   getSensitiveDetectionStats,
+  testSensitiveDetectionConnection,
   updateSensitiveDetectionChannels,
   updateSystemOption,
 } from '../api'
@@ -126,6 +131,12 @@ type SensitiveWordsSectionProps = {
     SensitiveDetectionBreakerCooldownSeconds: number
     GroupRatio: string
   }
+}
+
+type ConnectionTestState = {
+  ok: boolean | null
+  detectorStatus?: number
+  error?: string
 }
 
 const EMPTY_STATS: SensitiveDetectionStats = {
@@ -448,7 +459,8 @@ export function SensitiveWordsSection({
       SensitiveDetectionChannelIDs: selectedChannelIds,
       SensitiveDetectionTimeoutSeconds:
         defaultValues.SensitiveDetectionTimeoutSeconds,
-      SensitiveDetectionMaxIdleConns: defaultValues.SensitiveDetectionMaxIdleConns,
+      SensitiveDetectionMaxIdleConns:
+        defaultValues.SensitiveDetectionMaxIdleConns,
       SensitiveDetectionMaxIdleConnsPerHost:
         defaultValues.SensitiveDetectionMaxIdleConnsPerHost,
       SensitiveDetectionRPM: defaultValues.SensitiveDetectionRPM,
@@ -627,6 +639,33 @@ export function SensitiveWordsSection({
     },
   })
 
+  const [connectionTest, setConnectionTest] = useState<ConnectionTestState>({
+    ok: null,
+  })
+
+  const connectionTestMutation = useMutation({
+    mutationFn: testSensitiveDetectionConnection,
+    onSuccess: (response) => {
+      if (!response.success) {
+        const message = response.message || t('Connection failed')
+        setConnectionTest({ ok: false, error: message })
+        toast.error(message)
+        return
+      }
+      setConnectionTest({
+        ok: true,
+        detectorStatus: response.data?.detector_status,
+      })
+      toast.success(t('Connection successful'))
+    },
+    onError: (error) => {
+      const message =
+        error instanceof Error ? error.message : t('Connection failed')
+      setConnectionTest({ ok: false, error: message })
+      toast.error(message)
+    },
+  })
+
   const stats = statsQuery.data?.data ?? EMPTY_STATS
 
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -637,10 +676,42 @@ export function SensitiveWordsSection({
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const refreshDetectionData = () => {
+    void statsQuery.refetch()
+    void channelsQuery.refetch()
+  }
+
+  const handleTestConnection = form.handleSubmit((values) => {
+    connectionTestMutation.mutate({
+      model: values.SensitiveDetectionModel || '',
+      base_url: values.SensitiveDetectionBaseURL || '',
+      api_key: values.SensitiveDetectionAPIKey || '',
+      prompt: values.SensitiveDetectionPrompt || '',
+      timeout_seconds: values.SensitiveDetectionTimeoutSeconds,
+    })
+  })
+
   return (
     <SettingsSection title={t('Violation Detection')}>
       <div className='space-y-6'>
-        <div className='flex justify-end'>
+        <div className='flex justify-end gap-2'>
+          <Button
+            type='button'
+            variant='outline'
+            size='icon'
+            onClick={refreshDetectionData}
+            disabled={statsQuery.isFetching || channelsQuery.isFetching}
+            aria-label={t('Refresh')}
+            title={t('Refresh')}
+          >
+            <RefreshCw
+              className={cn(
+                'h-4 w-4',
+                (statsQuery.isFetching || channelsQuery.isFetching) &&
+                  'animate-spin'
+              )}
+            />
+          </Button>
           <Button variant='outline' size='sm' onClick={scrollToConfig}>
             <SlidersHorizontal className='mr-2 h-4 w-4' />
             {t('Detection configuration')}
@@ -815,18 +886,63 @@ export function SensitiveWordsSection({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('Detector API key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            placeholder={t('Leave blank to keep current key')}
-                            autoComplete='new-password'
-                            {...field}
-                          />
-                        </FormControl>
+                        <div className='flex gap-2'>
+                          <FormControl>
+                            <Input
+                              type='password'
+                              placeholder={t('Leave blank to keep current key')}
+                              autoComplete='new-password'
+                              {...field}
+                            />
+                          </FormControl>
+                          <Button
+                            type='button'
+                            variant='secondary'
+                            onClick={handleTestConnection}
+                            disabled={
+                              connectionTestMutation.isPending ||
+                              saveMutation.isPending
+                            }
+                            className='shrink-0'
+                          >
+                            {connectionTestMutation.isPending ? (
+                              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                            ) : null}
+                            {t('Test Connection')}
+                          </Button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
+                  {connectionTest.ok === true ? (
+                    <Alert data-settings-form-span='full'>
+                      <CheckCircle2 className='size-4 text-green-600' />
+                      <div>
+                        <AlertTitle>{t('Connection successful')}</AlertTitle>
+                        {connectionTest.detectorStatus ? (
+                          <AlertDescription>
+                            {t('Detector returned status {{status}}.', {
+                              status: connectionTest.detectorStatus,
+                            })}
+                          </AlertDescription>
+                        ) : null}
+                      </div>
+                    </Alert>
+                  ) : null}
+
+                  {connectionTest.ok === false && connectionTest.error ? (
+                    <Alert variant='destructive' data-settings-form-span='full'>
+                      <XCircle className='size-4' />
+                      <div>
+                        <AlertTitle>{t('Connection failed')}</AlertTitle>
+                        <AlertDescription>
+                          {connectionTest.error}
+                        </AlertDescription>
+                      </div>
+                    </Alert>
+                  ) : null}
 
                   <FormField
                     control={form.control}
@@ -909,9 +1025,7 @@ export function SensitiveWordsSection({
                           name='SensitiveDetectionRPM'
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>
-                                {t('Detector RPM limit')}
-                              </FormLabel>
+                              <FormLabel>{t('Detector RPM limit')}</FormLabel>
                               <FormControl>
                                 <Input
                                   type='number'
@@ -1024,9 +1138,7 @@ export function SensitiveWordsSection({
                           name='SensitiveDetectionCacheTTLSeconds'
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>
-                                {t('Cache TTL (seconds)')}
-                              </FormLabel>
+                              <FormLabel>{t('Cache TTL (seconds)')}</FormLabel>
                               <FormControl>
                                 <Input
                                   type='number'
@@ -1069,7 +1181,9 @@ export function SensitiveWordsSection({
                                 />
                               </FormControl>
                               <FormDescription>
-                                {t('In-memory LRU size when Redis is unavailable.')}
+                                {t(
+                                  'In-memory LRU size when Redis is unavailable.'
+                                )}
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -1097,7 +1211,9 @@ export function SensitiveWordsSection({
                                 />
                               </FormControl>
                               <FormDescription>
-                                {t('Global idle connections for the detector client.')}
+                                {t(
+                                  'Global idle connections for the detector client.'
+                                )}
                               </FormDescription>
                               <FormMessage />
                             </FormItem>

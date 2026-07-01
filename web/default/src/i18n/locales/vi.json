@@ -1332,6 +1332,7 @@
     "Detector model ID": "ID mo hinh kiem tra",
     "Detector pool: max idle": "Pool detector: tối đa nhàn rỗi",
     "Detector pool: max per host": "Pool detector: tối đa mỗi host",
+    "Detector returned status {{status}}.": "Bộ phát hiện đã trả về trạng thái {{status}}.",
     "Detector RPM limit": "Giới hạn RPM detector",
     "Detector Status": "Trang thai bo kiem tra",
     "Detector timeout (seconds)": "Thời gian chờ detector (giây)",
