@@ -57,6 +57,20 @@ func GetUserLogs(c *gin.Context) {
 	return
 }
 
+func GetSensitiveDetectionAudit(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		common.ApiErrorMsg(c, "无效的审计 ID")
+		return
+	}
+	audit, err := model.GetSensitiveDetectionAuditByID(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, audit)
+}
+
 // Deprecated: SearchAllLogs 已废弃，前端未使用该接口。
 func SearchAllLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

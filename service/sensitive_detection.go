@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -127,7 +128,11 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	}
 
 	// 限流：超过配置的 RPM 上限时放行（不检测），避免把检测模型打爆。
-	if !allowSensitiveDetectionCall(c.Request.Context()) {
+	ctx := context.Background()
+	if c.Request != nil && c.Request.Context() != nil {
+		ctx = c.Request.Context()
+	}
+	if !allowSensitiveDetectionCall(ctx) {
 		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
 			Status:  types.SensitiveDetectionStatusErrorOpen,
 			Trigger: trigger,
@@ -174,6 +179,157 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	return types.NewErrorWithStatusCode(errors.New(reason), types.ErrorCodePromptBlocked, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 }
 
+func SetSensitiveDetectionResponseText(c *gin.Context, text string) {
+	if c == nil {
+		return
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionResponseText, text)
+}
+
+func GetSensitiveDetectionResponseText(c *gin.Context) string {
+	return strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeySensitiveDetectionResponseText))
+}
+
+func EvaluatePostSensitiveDetectionFromContext(c *gin.Context, request dto.Request) {
+	if c == nil {
+		return
+	}
+	EvaluatePostSensitiveDetection(
+		c,
+		request,
+		GetSensitiveDetectionResponseText(c),
+		common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionChannelEnabled),
+		common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionGroupEnabled),
+	)
+}
+
+func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, responseText string, channelEnabled bool, groupEnabled bool) {
+	if c == nil || common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionDone) {
+		return
+	}
+
+	trigger := sensitiveDetectionPostTrigger(channelEnabled, groupEnabled)
+	if trigger == "" {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status: types.SensitiveDetectionStatusBypassed,
+		})
+		return
+	}
+
+	if !setting.SensitiveDetectionConfigured() {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusBypassed,
+			Trigger: trigger,
+			Reason:  "detector_not_configured",
+		})
+		return
+	}
+
+	userInput, _ := SensitiveDetectionRequestText(request)
+	text, ok := sensitiveDetectionPostText(userInput, responseText)
+	if !ok {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusBypassed,
+			Trigger: trigger,
+			Reason:  "no_supported_text",
+		})
+		return
+	}
+
+	if maxRunes := setting.SensitiveDetectionMaxRequestRunes; maxRunes > 0 {
+		if runeCount := utf8.RuneCountInString(text); runeCount > maxRunes {
+			finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+				Status:         types.SensitiveDetectionStatusErrorOpen,
+				Trigger:        trigger,
+				Checked:        true,
+				Reason:         fmt.Sprintf("post_detection_text_too_large: %d>%d runes", runeCount, maxRunes),
+				DetectorStatus: http.StatusRequestEntityTooLarge,
+			})
+			return
+		}
+	}
+
+	if cached, found := loadCachedSensitiveDetectionResult(trigger, text); found {
+		cached.Trigger = trigger
+		cached.Checked = true
+		if cached.Status == types.SensitiveDetectionStatusBlocked {
+			cached.Status = types.SensitiveDetectionStatusFlagged
+		}
+		finishPostSensitiveDetection(c, cached)
+		if cached.Status == types.SensitiveDetectionStatusFlagged {
+			recordPostSensitiveDetectionAudit(c, cached, responseText)
+		}
+		return
+	}
+
+	if !sensitiveDetectionBreakerAllows() {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusErrorOpen,
+			Trigger: trigger,
+			Checked: true,
+			Reason:  "breaker_open",
+		})
+		return
+	}
+
+	ctx := context.Background()
+	if reason, limited := postSensitiveDetectionSubjectRateLimitReason(ctx, c); limited {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status:         types.SensitiveDetectionStatusErrorOpen,
+			Trigger:        trigger,
+			Checked:        true,
+			Reason:         reason,
+			DetectorStatus: http.StatusTooManyRequests,
+		})
+		return
+	}
+
+	if !allowSensitiveDetectionCall(ctx) {
+		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
+			Status:  types.SensitiveDetectionStatusErrorOpen,
+			Trigger: trigger,
+			Checked: true,
+			Reason:  "rate_limited",
+		})
+		return
+	}
+
+	result, err := callSensitiveDetectionModelWithConfig(ctx, SensitiveDetectionConnectionTestConfig{
+		Model:          setting.SensitiveDetectionModel,
+		BaseURL:        setting.SensitiveDetectionBaseURL,
+		APIKey:         setting.SensitiveDetectionAPIKey,
+		Prompt:         setting.SensitiveDetectionPrompt,
+		TimeoutSeconds: setting.SensitiveDetectionTimeoutSeconds,
+	}, text)
+	result.Trigger = trigger
+	result.Checked = true
+	if err != nil {
+		recordSensitiveDetectionCallOutcome(false)
+		result.Status = types.SensitiveDetectionStatusErrorOpen
+		result.Reason = truncateSensitiveDetectionText(err.Error(), 512)
+		finishPostSensitiveDetection(c, result)
+		logger.LogWarn(c, fmt.Sprintf("post sensitive detection failed open: %s", common.LocalLogPreview(err.Error())))
+		return
+	}
+
+	recordSensitiveDetectionCallOutcome(true)
+	if result.DetectorStatus == http.StatusOK {
+		result.Status = types.SensitiveDetectionStatusAllowed
+		storeCachedSensitiveDetectionResult(trigger, text, result)
+		finishPostSensitiveDetection(c, result)
+		return
+	}
+
+	result.Status = types.SensitiveDetectionStatusFlagged
+	storeCachedSensitiveDetectionResult(trigger, text, result)
+	finishPostSensitiveDetection(c, result)
+	recordPostSensitiveDetectionAudit(c, result, responseText)
+}
+
 func TestSensitiveDetectionConnection(ctx context.Context, config SensitiveDetectionConnectionTestConfig) (types.SensitiveDetectionResult, error) {
 	if strings.TrimSpace(config.Model) == "" {
 		return types.SensitiveDetectionResult{}, errors.New("detector model is required")
@@ -209,6 +365,40 @@ func SensitiveDetectionRequestText(request dto.Request) (string, bool) {
 	}
 }
 
+func SensitiveDetectionOpenAIResponseText(response *dto.OpenAITextResponse) string {
+	if response == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(response.Choices)*3)
+	for _, choice := range response.Choices {
+		appendSensitiveDetectionText(&parts, "assistant", choice.Message.StringContent())
+		appendSensitiveDetectionText(&parts, "assistant.reasoning_content", choice.Message.GetReasoningContent())
+		appendSensitiveDetectionAnyText(&parts, "assistant.tool_calls", choice.Message.ToolCalls)
+	}
+	text, _ := sensitiveDetectionJoinedText(parts)
+	return text
+}
+
+func SensitiveDetectionClaudeResponseText(response *dto.ClaudeResponse) string {
+	if response == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(response.Content)+2)
+	appendSensitiveDetectionText(&parts, "completion", response.Completion)
+	for _, content := range response.Content {
+		appendSensitiveDetectionText(&parts, "assistant", content.GetText())
+		if content.Thinking != nil {
+			appendSensitiveDetectionText(&parts, "assistant.thinking", *content.Thinking)
+		}
+		if content.Type == "tool_use" {
+			appendSensitiveDetectionText(&parts, "assistant.tool_use.name", content.Name)
+			appendSensitiveDetectionAnyText(&parts, "assistant.tool_use.input", content.Input)
+		}
+	}
+	text, _ := sensitiveDetectionJoinedText(parts)
+	return text
+}
+
 func sensitiveDetectionTrigger(channelEnabled bool, groupEnabled bool) string {
 	if channelEnabled && groupEnabled {
 		return "channel,group"
@@ -220,6 +410,53 @@ func sensitiveDetectionTrigger(channelEnabled bool, groupEnabled bool) string {
 		return "group"
 	}
 	return ""
+}
+
+func sensitiveDetectionPostTrigger(channelEnabled bool, groupEnabled bool) string {
+	trigger := sensitiveDetectionTrigger(channelEnabled, groupEnabled)
+	if trigger == "" {
+		return ""
+	}
+	return "post:" + trigger
+}
+
+func sensitiveDetectionPostText(userInput string, modelOutput string) (string, bool) {
+	parts := make([]string, 0, 2)
+	appendSensitiveDetectionText(&parts, "user_input", userInput)
+	appendSensitiveDetectionText(&parts, "model_output", modelOutput)
+	return sensitiveDetectionJoinedText(parts)
+}
+
+func finishPostSensitiveDetection(c *gin.Context, result types.SensitiveDetectionResult) {
+	setSensitiveDetectionResult(c, result)
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
+}
+
+func postSensitiveDetectionSubjectRateLimitReason(ctx context.Context, c *gin.Context) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	if !allowSensitiveDetectionScopedCall(ctx, "token", c.GetInt("token_id"), setting.SensitiveDetectionTokenRPM) {
+		return "sensitive_detection_token_rate_limited", true
+	}
+	if !allowSensitiveDetectionScopedCall(ctx, "user", c.GetInt("id"), setting.SensitiveDetectionUserRPM) {
+		return "sensitive_detection_user_rate_limited", true
+	}
+	return "", false
+}
+
+func recordPostSensitiveDetectionAudit(c *gin.Context, result types.SensitiveDetectionResult, responseText string) {
+	audit, err := model.RecordSensitiveDetectionAudit(c, result, responseText)
+	if err != nil {
+		logger.LogWarn(c, fmt.Sprintf("failed to record post sensitive detection audit: %s", common.LocalLogPreview(err.Error())))
+		return
+	}
+	if audit == nil {
+		return
+	}
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionAuditID, audit.Id)
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionRequestBodySHA256, audit.RequestBodySHA256)
+	common.SetContextKey(c, constant.ContextKeySensitiveDetectionRequestBodyBytes, audit.RequestBodyBytes)
 }
 
 func rejectOversizedSensitiveDetectionText(c *gin.Context, trigger, text string) *types.NewAPIError {

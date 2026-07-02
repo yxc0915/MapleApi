@@ -43,6 +43,7 @@ export type SensitiveDetectionStatus =
   | ''
   | 'allowed'
   | 'blocked'
+  | 'flagged'
   | 'bypassed'
   | 'error_open'
 
@@ -66,12 +67,44 @@ export type SensitiveDetectionRecentLog = {
   channel_name?: string
   group: string
   content: string
+  other?: string
   sensitive_detection_status?: SensitiveDetectionStatus
   sensitive_detection_checked?: boolean
   sensitive_detection_trigger?: string
   sensitive_detection_objects?: string
   sensitive_detection_reason?: string
   sensitive_detection_detector_status?: number
+}
+
+export type SensitiveDetectionAudit = {
+  id: number
+  created_at: number
+  request_id: string
+  user_id: number
+  token_id: number
+  token_name: string
+  channel_id: number
+  group: string
+  model_name: string
+  status: SensitiveDetectionStatus
+  trigger: string
+  objects: string
+  reason: string
+  detector_status: number
+  method: string
+  path: string
+  query: string
+  content_type: string
+  request_body: string
+  request_body_bytes: number
+  request_body_sha256: string
+  response_text_preview: string
+}
+
+export type SensitiveDetectionAuditResponse = {
+  success: boolean
+  message: string
+  data?: SensitiveDetectionAudit
 }
 
 export type SensitiveDetectionStats = {

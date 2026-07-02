@@ -5,6 +5,7 @@ type SensitiveDetectionStatus string
 const (
 	SensitiveDetectionStatusAllowed   SensitiveDetectionStatus = "allowed"
 	SensitiveDetectionStatusBlocked   SensitiveDetectionStatus = "blocked"
+	SensitiveDetectionStatusFlagged   SensitiveDetectionStatus = "flagged"
 	SensitiveDetectionStatusBypassed  SensitiveDetectionStatus = "bypassed"
 	SensitiveDetectionStatusErrorOpen SensitiveDetectionStatus = "error_open"
 )

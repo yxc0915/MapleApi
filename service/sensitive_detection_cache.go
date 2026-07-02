@@ -85,13 +85,14 @@ func loadCachedSensitiveDetectionResult(trigger, text string) (types.SensitiveDe
 }
 
 // storeCachedSensitiveDetectionResult 写入缓存。
-// 仅缓存 allowed 与 blocked 结果（确定性的判定），error_open/bypassed 不写。
+// 仅缓存 allowed、blocked 与 flagged 结果（确定性的判定），error_open/bypassed 不写。
 func storeCachedSensitiveDetectionResult(trigger, text string, result types.SensitiveDetectionResult) {
 	if !setting.SensitiveDetectionCacheEnabled {
 		return
 	}
 	if result.Status != types.SensitiveDetectionStatusAllowed &&
-		result.Status != types.SensitiveDetectionStatusBlocked {
+		result.Status != types.SensitiveDetectionStatusBlocked &&
+		result.Status != types.SensitiveDetectionStatusFlagged {
 		return
 	}
 	ttl := time.Duration(sensitiveDetectionCacheTTLSeconds()) * time.Second

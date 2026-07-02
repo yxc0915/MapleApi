@@ -320,6 +320,9 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 }
 
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
+	if relayInfo != nil {
+		EvaluatePostSensitiveDetectionFromContext(ctx, relayInfo.Request)
+	}
 	originUsage := usage
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
@@ -457,6 +460,15 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if tieredBillingApplied {
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
+	}
+	if auditID := common.GetContextKeyInt(ctx, constant.ContextKeySensitiveDetectionAuditID); auditID > 0 {
+		other["sensitive_detection_audit_id"] = auditID
+	}
+	if requestBodySHA256 := common.GetContextKeyString(ctx, constant.ContextKeySensitiveDetectionRequestBodySHA256); requestBodySHA256 != "" {
+		other["request_body_sha256"] = requestBodySHA256
+	}
+	if requestBodyBytes, ok := common.GetContextKeyType[int64](ctx, constant.ContextKeySensitiveDetectionRequestBodyBytes); ok && requestBodyBytes > 0 {
+		other["request_body_bytes"] = requestBodyBytes
 	}
 
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{

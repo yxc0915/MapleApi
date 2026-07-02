@@ -174,6 +174,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		}
 	}
 
+	service.SetSensitiveDetectionResponseText(c, responseTextBuilder.String())
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
@@ -226,6 +227,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			break
 		}
 	}
+	service.SetSensitiveDetectionResponseText(c, service.SensitiveDetectionOpenAIResponseText(&simpleResponse))
 
 	forceFormat := false
 	if info.ChannelSetting.ForceFormat {

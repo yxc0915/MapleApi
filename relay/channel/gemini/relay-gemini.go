@@ -1380,6 +1380,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 	})
 
+	service.SetSensitiveDetectionResponseText(c, responseText.String())
 	if imageCount != 0 {
 		if usage.CompletionTokens == 0 {
 			usage.CompletionTokens = imageCount * 1400
@@ -1551,6 +1552,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
 	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+	service.SetSensitiveDetectionResponseText(c, service.SensitiveDetectionOpenAIResponseText(fullTextResponse))
 
 	fullTextResponse.Usage = usage
 

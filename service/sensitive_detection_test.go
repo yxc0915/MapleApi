@@ -269,6 +269,97 @@ func TestEvaluateSensitiveDetectionFailsOpenOnInvalidDetectorJSON(t *testing.T) 
 	assert.Contains(t, result.Reason, "neither JSON")
 }
 
+func TestEvaluatePostSensitiveDetectionCombinesInputAndOutputAndFlags(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload sensitiveDetectionRequest
+		require.NoError(t, common.DecodeJson(r.Body, &payload))
+		require.Len(t, payload.Messages, 2)
+		assert.Contains(t, payload.Messages[1].Content, "user_input:")
+		assert.Contains(t, payload.Messages[1].Content, "latest prompt")
+		assert.Contains(t, payload.Messages[1].Content, "model_output:")
+		assert.Contains(t, payload.Messages[1].Content, "flagged model output")
+		writeSensitiveDetectionResponse(t, w, `{"status":499,"objects":["policy"],"reason":"flagged by policy"}`)
+	}))
+	defer server.Close()
+	restore := configureSensitiveDetectionForTest(server.URL)
+	defer restore()
+
+	c := newSensitiveDetectionTestContext()
+	EvaluatePostSensitiveDetection(c, newSensitiveDetectionOpenAIRequest(), "flagged model output", true, false)
+
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	require.True(t, ok)
+	assert.Equal(t, types.SensitiveDetectionStatusFlagged, result.Status)
+	assert.Equal(t, "post:channel", result.Trigger)
+	assert.True(t, result.Checked)
+	assert.Equal(t, 499, result.DetectorStatus)
+	assert.Contains(t, result.Objects, "policy")
+	assert.Equal(t, "flagged by policy", result.Reason)
+	assert.True(t, common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionDone))
+}
+
+func TestEvaluatePostSensitiveDetectionAllows200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSensitiveDetectionResponse(t, w, `{"status":200}`)
+	}))
+	defer server.Close()
+	restore := configureSensitiveDetectionForTest(server.URL)
+	defer restore()
+
+	c := newSensitiveDetectionTestContext()
+	EvaluatePostSensitiveDetection(c, newSensitiveDetectionOpenAIRequest(), "allowed model output", true, true)
+
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	require.True(t, ok)
+	assert.Equal(t, types.SensitiveDetectionStatusAllowed, result.Status)
+	assert.Equal(t, "post:channel,group", result.Trigger)
+	assert.Equal(t, http.StatusOK, result.DetectorStatus)
+}
+
+func TestEvaluatePostSensitiveDetectionIgnoresCanceledRequestContext(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		callCount++
+		writeSensitiveDetectionResponse(t, w, `{"status":200}`)
+	}))
+	defer server.Close()
+	restore := configureSensitiveDetectionForTest(server.URL)
+	defer restore()
+
+	c := newSensitiveDetectionTestContext()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = c.Request.WithContext(ctx)
+
+	EvaluatePostSensitiveDetection(c, newSensitiveDetectionOpenAIRequest(), "allowed model output", true, false)
+
+	assert.Equal(t, 1, callCount)
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	require.True(t, ok)
+	assert.Equal(t, types.SensitiveDetectionStatusAllowed, result.Status)
+	assert.Equal(t, "post:channel", result.Trigger)
+	assert.Equal(t, http.StatusOK, result.DetectorStatus)
+}
+
+func TestEvaluatePostSensitiveDetectionFailsOpenOnDetectorFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+	restore := configureSensitiveDetectionForTest(server.URL)
+	defer restore()
+
+	c := newSensitiveDetectionTestContext()
+	EvaluatePostSensitiveDetection(c, newSensitiveDetectionOpenAIRequest(), "model output", false, true)
+
+	result, ok := common.GetContextKeyType[types.SensitiveDetectionResult](c, constant.ContextKeySensitiveDetectionResult)
+	require.True(t, ok)
+	assert.Equal(t, types.SensitiveDetectionStatusErrorOpen, result.Status)
+	assert.Equal(t, "post:group", result.Trigger)
+	assert.True(t, result.Checked)
+	assert.Contains(t, result.Reason, "detector returned status")
+}
+
 func configureSensitiveDetectionForTest(baseURL string) func() {
 	oldModel := setting.SensitiveDetectionModel
 	oldBaseURL := setting.SensitiveDetectionBaseURL

@@ -108,7 +108,7 @@ func RecordSensitiveDetectionStat(params SensitiveDetectionStatParams) {
 		}
 
 		switch status {
-		case types.SensitiveDetectionStatusBlocked:
+		case types.SensitiveDetectionStatusBlocked, types.SensitiveDetectionStatusFlagged:
 			stat.IllegalCount++
 		default:
 			stat.NormalCount++
@@ -205,7 +205,7 @@ func GetRecentSensitiveDetectionBlockedLogs(limit int) ([]*Log, error) {
 		order = clickHouseLogOrder("")
 	}
 	var logs []*Log
-	err := LOG_DB.Where("sensitive_detection_status = ?", string(types.SensitiveDetectionStatusBlocked)).
+	err := LOG_DB.Where("sensitive_detection_status IN ?", []string{string(types.SensitiveDetectionStatusBlocked), string(types.SensitiveDetectionStatusFlagged)}).
 		Order(order).
 		Limit(limit).
 		Find(&logs).Error

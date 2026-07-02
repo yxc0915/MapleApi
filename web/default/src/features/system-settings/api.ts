@@ -23,6 +23,7 @@ import type {
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SensitiveDetectionChannelsResponse,
+  SensitiveDetectionAuditResponse,
   SensitiveDetectionStatsResponse,
   SensitiveDetectionTestRequest,
   SensitiveDetectionTestResponse,
@@ -58,6 +59,13 @@ export async function getSensitiveDetectionStats(limit = 10) {
 export async function getSensitiveDetectionChannels() {
   const res = await api.get<SensitiveDetectionChannelsResponse>(
     '/api/option/sensitive_detection/channels'
+  )
+  return res.data
+}
+
+export async function getSensitiveDetectionAudit(auditId: number) {
+  const res = await api.get<SensitiveDetectionAuditResponse>(
+    `/api/log/sensitive_detection/audits/${auditId}`
   )
   return res.data
 }

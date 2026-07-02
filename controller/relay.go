@@ -195,11 +195,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		lastSensitiveDetectionGroup = usingGroup
 		channelDetectionEnabled := selectedChannelSensitiveDetectionEnabled(channel, relayInfo)
 		groupDetectionEnabled := setting.SensitiveDetectionGroupEnabled(usingGroup)
-		if detectionErr := service.EvaluateSensitiveDetection(c, request, channelDetectionEnabled, groupDetectionEnabled); detectionErr != nil {
-			newAPIError = detectionErr
-			recordSensitiveDetectionBlocked(c, relayInfo, channel, usingGroup, detectionErr)
-			break
-		}
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionChannelEnabled, channelDetectionEnabled)
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionGroupEnabled, groupDetectionEnabled)
+		common.SetContextKey(c, constant.ContextKeySensitiveDetectionGroup, usingGroup)
 
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {

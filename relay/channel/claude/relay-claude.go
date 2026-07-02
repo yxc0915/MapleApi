@@ -833,6 +833,7 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 }
 
 func HandleStreamFinalResponse(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *ClaudeResponseInfo) {
+	service.SetSensitiveDetectionResponseText(c, claudeInfo.ResponseText.String())
 	if claudeInfo.Usage.PromptTokens == 0 {
 		//上游出错
 	}
@@ -903,6 +904,10 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
 	}
 	maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+	if responseText := service.SensitiveDetectionClaudeResponseText(&claudeResponse); responseText != "" {
+		claudeInfo.ResponseText.WriteString(responseText)
+		service.SetSensitiveDetectionResponseText(c, responseText)
+	}
 	if claudeInfo.Usage == nil {
 		claudeInfo.Usage = &dto.Usage{}
 	}

@@ -70,6 +70,13 @@ const (
 	ContextKeySensitiveDetectionResult              ContextKey = "sensitive_detection_result"
 	ContextKeySensitiveDetectionDone                ContextKey = "sensitive_detection_done"
 	ContextKeySensitiveDetectionForwardStatRecorded ContextKey = "sensitive_detection_forward_stat_recorded"
+	ContextKeySensitiveDetectionChannelEnabled      ContextKey = "sensitive_detection_channel_enabled"
+	ContextKeySensitiveDetectionGroupEnabled        ContextKey = "sensitive_detection_group_enabled"
+	ContextKeySensitiveDetectionGroup               ContextKey = "sensitive_detection_group"
+	ContextKeySensitiveDetectionResponseText        ContextKey = "sensitive_detection_response_text"
+	ContextKeySensitiveDetectionAuditID             ContextKey = "sensitive_detection_audit_id"
+	ContextKeySensitiveDetectionRequestBodySHA256   ContextKey = "sensitive_detection_request_body_sha256"
+	ContextKeySensitiveDetectionRequestBodyBytes    ContextKey = "sensitive_detection_request_body_bytes"
 
 	// ContextKeyAuditLogged marks that the current request has already recorded
 	// a manage/operation audit log inside the handler. When set, the admin-audit

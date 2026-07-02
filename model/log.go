@@ -147,6 +147,9 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "audit_info")
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
+			delete(otherMap, "sensitive_detection_audit_id")
+			delete(otherMap, "request_body_sha256")
+			delete(otherMap, "request_body_bytes")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 	}
@@ -352,12 +355,12 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 // 异步 goroutine 不能访问 *gin.Context（请求结束后会被复用/回收），因此调用方
 // 必须在进入 goroutine 前把这些值取出来。
 type ErrorLogContext struct {
-	Username         string
-	RequestId        string
+	Username          string
+	RequestId         string
 	UpstreamRequestId string
-	ClientIP         string
+	ClientIP          string
 	// Detection 为非 nil 时直接写入违规检测字段，跳过从 context 读取。
-	Detection        *SensitiveDetectionLogFields
+	Detection *SensitiveDetectionLogFields
 }
 
 // SensitiveDetectionLogFields 是违规检测日志字段的值快照，避免异步时回读 context。
@@ -376,22 +379,22 @@ func RecordErrorLogDetached(userId int, channelId int, modelName string, tokenNa
 	isStream bool, group string, other map[string]interface{}, ctx ErrorLogContext) {
 	otherStr := common.MapToJsonStr(other)
 	log := &Log{
-		UserId:           userId,
-		Username:         ctx.Username,
-		CreatedAt:        common.GetTimestamp(),
-		Type:             LogTypeError,
-		Content:          content,
-		TokenName:        tokenName,
-		ModelName:        modelName,
-		ChannelId:        channelId,
-		TokenId:          tokenId,
-		UseTime:          useTimeSeconds,
-		IsStream:         isStream,
-		Group:            group,
-		Ip:               ctx.ClientIP,
-		RequestId:        ctx.RequestId,
+		UserId:            userId,
+		Username:          ctx.Username,
+		CreatedAt:         common.GetTimestamp(),
+		Type:              LogTypeError,
+		Content:           content,
+		TokenName:         tokenName,
+		ModelName:         modelName,
+		ChannelId:         channelId,
+		TokenId:           tokenId,
+		UseTime:           useTimeSeconds,
+		IsStream:          isStream,
+		Group:             group,
+		Ip:                ctx.ClientIP,
+		RequestId:         ctx.RequestId,
 		UpstreamRequestId: ctx.UpstreamRequestId,
-		Other:            otherStr,
+		Other:             otherStr,
 	}
 	if ctx.Detection != nil {
 		log.SensitiveDetectionStatus = ctx.Detection.Status

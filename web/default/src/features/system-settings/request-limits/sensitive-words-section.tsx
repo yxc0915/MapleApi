@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleSlash2,
+  Eye,
   Loader2,
   RefreshCw,
   ShieldAlert,
@@ -38,6 +39,7 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { StaticDataTable } from '@/components/data-table/static/static-data-table'
+import { Dialog } from '@/components/dialog'
 import {
   MultiSelect,
   type Option as MultiSelectOption,
@@ -73,6 +75,7 @@ import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
+  getSensitiveDetectionAudit,
   getSensitiveDetectionChannels,
   getSensitiveDetectionStats,
   testSensitiveDetectionConnection,
@@ -139,6 +142,12 @@ type ConnectionTestState = {
   error?: string
 }
 
+type SensitiveDetectionLogOther = {
+  sensitive_detection_audit_id?: number | string
+  request_body_sha256?: string
+  request_body_bytes?: number
+}
+
 const EMPTY_STATS: SensitiveDetectionStats = {
   normal_count: 0,
   illegal_count: 0,
@@ -198,6 +207,67 @@ function truncateMiddle(value: string | undefined, maxLength = 80) {
   return `${value.slice(0, maxLength - 1)}…`
 }
 
+function parseSensitiveDetectionLogOther(
+  raw: string | undefined
+): SensitiveDetectionLogOther {
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+    return parsed as SensitiveDetectionLogOther
+  } catch {
+    return {}
+  }
+}
+
+function getSensitiveDetectionAuditId(row: SensitiveDetectionRecentLog) {
+  const rawId = parseSensitiveDetectionLogOther(row.other)
+    .sensitive_detection_audit_id
+  const auditId = Number(rawId)
+  if (!Number.isFinite(auditId) || auditId <= 0) return null
+  return auditId
+}
+
+function DetailField({
+  label,
+  value,
+}: {
+  label: string
+  value: ReactNode
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='min-w-0 space-y-1'>
+      <div className='text-muted-foreground text-xs font-medium'>
+        {t(label)}
+      </div>
+      <div className='min-w-0 break-words text-sm'>{value || '-'}</div>
+    </div>
+  )
+}
+
+function TextPreviewBlock({
+  label,
+  value,
+}: {
+  label: string
+  value?: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='space-y-2'>
+      <div className='text-muted-foreground text-xs font-medium'>
+        {t(label)}
+      </div>
+      <pre className='bg-muted max-h-72 overflow-auto rounded-md border p-3 text-xs whitespace-pre-wrap break-words'>
+        {value || '-'}
+      </pre>
+    </div>
+  )
+}
+
 function detectionStatusMeta(status?: SensitiveDetectionStatus): {
   label: string
   variant: StatusVariant
@@ -207,6 +277,8 @@ function detectionStatusMeta(status?: SensitiveDetectionStatus): {
       return { label: 'Passed', variant: 'success' }
     case 'blocked':
       return { label: 'Blocked', variant: 'danger' }
+    case 'flagged':
+      return { label: 'Flagged', variant: 'danger' }
     case 'bypassed':
       return { label: 'Bypassed', variant: 'neutral' }
     case 'error_open':
@@ -327,12 +399,26 @@ function RecentViolationsTable({
   rows: SensitiveDetectionRecentLog[]
 }) {
   const { t } = useTranslation()
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false)
+  const auditMutation = useMutation({
+    mutationFn: getSensitiveDetectionAudit,
+    onError: () => {
+      toast.error(t('Failed to load audit request'))
+    },
+  })
+  const audit = auditMutation.data?.data
+
+  const openAudit = (auditId: number) => {
+    setAuditDialogOpen(true)
+    auditMutation.mutate(auditId)
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>{t('Recent violations')}</CardTitle>
         <CardDescription>
-          {t('Latest requests blocked by violation detection.')}
+          {t('Latest requests flagged by post-response violation detection.')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -411,9 +497,90 @@ function RecentViolationsTable({
                 </span>
               ),
             },
+            {
+              id: 'request',
+              header: t('Request'),
+              className: 'w-32 text-right',
+              cellClassName: 'text-right',
+              cell: (row) => {
+                const auditId = getSensitiveDetectionAuditId(row)
+                if (!auditId) return <span className='text-muted-foreground'>-</span>
+                return (
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => openAudit(auditId)}
+                    disabled={auditMutation.isPending}
+                  >
+                    <Eye className='mr-2 h-4 w-4' />
+                    {t('View request')}
+                  </Button>
+                )
+              },
+            },
           ]}
         />
       </CardContent>
+      <Dialog
+        open={auditDialogOpen}
+        onOpenChange={setAuditDialogOpen}
+        title={t('Violation audit request')}
+        description={t(
+          'Complete original request captured for this flagged detection.'
+        )}
+        contentClassName='sm:max-w-4xl'
+        bodyClassName='space-y-5'
+      >
+        {auditMutation.isPending ? (
+          <div className='text-muted-foreground flex h-32 items-center justify-center gap-2 text-sm'>
+            <Loader2 className='h-4 w-4 animate-spin' />
+            {t('Loading')}
+          </div>
+        ) : audit ? (
+          <div className='space-y-5'>
+            <div className='grid gap-4 sm:grid-cols-2 xl:grid-cols-3'>
+              <DetailField label='Audit ID' value={`#${audit.id}`} />
+              <DetailField label='Request ID' value={audit.request_id} />
+              <DetailField label='Status' value={audit.status} />
+              <DetailField label='Method' value={audit.method} />
+              <DetailField label='Path' value={audit.path} />
+              <DetailField label='Query' value={audit.query} />
+              <DetailField label='Content-Type' value={audit.content_type} />
+              <DetailField
+                label='Body bytes'
+                value={formatCount(audit.request_body_bytes)}
+              />
+              <DetailField
+                label='Body SHA256'
+                value={
+                  <span className='font-mono text-xs'>
+                    {audit.request_body_sha256 || '-'}
+                  </span>
+                }
+              />
+              <DetailField label='Model' value={audit.model_name} />
+              <DetailField label='Group' value={audit.group} />
+              <DetailField
+                label='Detector status'
+                value={audit.detector_status || '-'}
+              />
+            </div>
+            <TextPreviewBlock
+              label='Request body'
+              value={audit.request_body}
+            />
+            <TextPreviewBlock
+              label='Model output preview'
+              value={audit.response_text_preview}
+            />
+          </div>
+        ) : (
+          <div className='text-muted-foreground flex h-32 items-center justify-center text-sm'>
+            {t('No audit details for this record.')}
+          </div>
+        )}
+      </Dialog>
     </Card>
   )
 }
@@ -728,7 +895,7 @@ export function SensitiveWordsSection({
           <StatCard
             title='Illegal requests'
             value={stats.illegal_count}
-            description='Requests blocked before upstream'
+            description='Requests flagged after response'
             icon={<ShieldAlert className='h-5 w-5' />}
           />
           <StatCard
@@ -750,21 +917,21 @@ export function SensitiveWordsSection({
         <div className='grid gap-4 xl:grid-cols-3'>
           <CounterTable
             title='Top flagged objects'
-            description='Most frequent detector labels among blocked requests.'
+            description='Most frequent detector labels among flagged requests.'
             data={stats.top_objects ?? []}
             keyHeader='Object'
             emptyText='No flagged objects yet.'
           />
           <CounterTable
             title='Channel detection stats'
-            description='Forwarded and blocked requests grouped by channel.'
+            description='Forwarded and flagged requests grouped by channel.'
             data={stats.channel_stats ?? []}
             keyHeader='Channel'
             emptyText='No channel statistics yet.'
           />
           <CounterTable
             title='Group detection stats'
-            description='Forwarded and blocked requests grouped by user group.'
+            description='Forwarded and flagged requests grouped by user group.'
             data={stats.group_stats ?? []}
             keyHeader='Group'
             emptyText='No group statistics yet.'
@@ -815,7 +982,7 @@ export function SensitiveWordsSection({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Requests using any selected channel will be checked.'
+                            'Requests using any selected channel will be audited after response.'
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -841,7 +1008,7 @@ export function SensitiveWordsSection({
                         </FormControl>
                         <FormDescription>
                           {t(
-                            'Requests from any selected group will be checked.'
+                            'Requests from any selected group will be audited after response.'
                           )}
                         </FormDescription>
                         <FormMessage />
@@ -1117,7 +1284,7 @@ export function SensitiveWordsSection({
                                 <FormLabel>{t('Cache results')}</FormLabel>
                                 <FormDescription>
                                   {t(
-                                    'Reuse verdicts for identical prompts. Blocked results are cached too.'
+                                    'Reuse verdicts for identical audit payloads. Flagged results are cached too.'
                                   )}
                                 </FormDescription>
                               </div>
