@@ -659,6 +659,9 @@ func handleConfigUpdate(key, value string) bool {
 		ratio_setting.InvalidateExposedDataCache()
 	} else if configName == "theme" {
 		system_setting.UpdateAndSyncTheme()
+		if configKey == "frontend" {
+			common.OptionMap[key] = system_setting.GetThemeSettings().Frontend
+		}
 	}
 
 	return true // 已处理

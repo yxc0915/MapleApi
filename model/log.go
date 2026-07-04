@@ -826,30 +826,3 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 	}
 	return result.RowsAffected, nil
 }
-
-func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-
-	var total int64 = 0
-
-	for {
-		if nil != ctx.Err() {
-			return total, ctx.Err()
-		}
-
-		rowsAffected, err := DeleteOldLogBatch(ctx, targetTimestamp, limit)
-		if nil != err {
-			return total, err
-		}
-
-		total += rowsAffected
-
-		if rowsAffected < int64(limit) {
-			break
-		}
-	}
-
-	return total, nil
-}
