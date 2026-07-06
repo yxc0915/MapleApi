@@ -32,6 +32,10 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 			controller.RelayNotFound(c)
 			return
 		}
+		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.Status(http.StatusNotFound)
+			return
+		}
 		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, "text/html; charset=utf-8", assets.DefaultIndexPage)
 	})
