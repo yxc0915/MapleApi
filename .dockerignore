@@ -12,4 +12,11 @@ docs
 /web/default/dist
 /web/classic/node_modules
 /web/classic/dist
+logs
+mysql-data
+postgres-data
+redis-data
+backups
+migration
+.codex-migration
 !THIRD-PARTY-LICENSES.md

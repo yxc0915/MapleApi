@@ -314,6 +314,9 @@ func migrateDB() error {
 			return err
 		}
 	}
+	if err := migrateMySQLCaseSensitiveUsernames(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -709,6 +712,34 @@ func migrateSubscriptionPlanPriceAmount() {
 			common.SysLog(fmt.Sprintf("Successfully migrated %s.%s to decimal(10,6)", tableName, columnName))
 		}
 	}
+}
+
+func migrateMySQLCaseSensitiveUsernames() error {
+	if !common.UsingMainDatabase(common.DatabaseTypeMySQL) {
+		return nil
+	}
+
+	tableName := "users"
+	columnName := "username"
+	if !DB.Migrator().HasTable(tableName) || !DB.Migrator().HasColumn(&User{}, columnName) {
+		return nil
+	}
+
+	var collation string
+	if err := DB.Raw(`SELECT COLLATION_NAME FROM information_schema.columns
+			WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+		tableName, columnName).Scan(&collation).Error; err != nil {
+		return fmt.Errorf("failed to query metadata for %s.%s: %w", tableName, columnName, err)
+	}
+	if strings.EqualFold(collation, "utf8mb4_bin") {
+		return nil
+	}
+
+	if err := DB.Exec("ALTER TABLE users MODIFY COLUMN username varchar(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin").Error; err != nil {
+		return fmt.Errorf("failed to migrate users.username to utf8mb4_bin: %w", err)
+	}
+	common.SysLog("Successfully migrated users.username to utf8mb4_bin")
+	return nil
 }
 
 func closeDB(db *gorm.DB) error {
