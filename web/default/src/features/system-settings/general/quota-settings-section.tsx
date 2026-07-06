@@ -22,7 +22,6 @@ import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   Form,
   FormControl,
@@ -67,12 +66,10 @@ type QuotaFormValues = z.infer<typeof quotaSchema>
 
 type QuotaSettingsSectionProps = {
   defaultValues: QuotaFormValues
-  complianceConfirmed?: boolean
 }
 
 export function QuotaSettingsSection({
   defaultValues,
-  complianceConfirmed = true,
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
@@ -105,16 +102,6 @@ export function QuotaSettingsSection({
   return (
     <SettingsSection title={t('Quota Settings')}>
       <FormNavigationGuard when={isDirty} />
-
-      {!complianceConfirmed ? (
-        <Alert variant='destructive'>
-          <AlertDescription>
-            {t(
-              'Non-zero invitation rewards require compliance confirmation in Payment Gateway settings.'
-            )}
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       <Form {...form}>
         <SettingsForm onSubmit={handleSubmit}>

@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
-  ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
   SensitiveDetectionChannelsResponse,
@@ -93,14 +92,6 @@ export async function testSensitiveDetectionConnection(
     '/api/option/sensitive_detection/test',
     request,
     config
-  )
-  return res.data
-}
-
-export async function confirmPaymentCompliance() {
-  const res = await api.post<ConfirmPaymentComplianceResponse>(
-    '/api/option/payment_compliance',
-    { confirmed: true }
   )
   return res.data
 }
