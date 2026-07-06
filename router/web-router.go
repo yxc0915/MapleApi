@@ -33,6 +33,7 @@ func SetWebRouter(router *gin.Engine, assets ThemeAssets) {
 			return
 		}
 		if strings.HasPrefix(c.Request.URL.Path, "/static/") {
+			c.Header("Cache-Control", "no-cache")
 			c.Status(http.StatusNotFound)
 			return
 		}
