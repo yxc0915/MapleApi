@@ -37,7 +37,8 @@ import type {
  */
 export function buildSearchParams(
   filters: LogFilters,
-  logCategory: LogCategory
+  logCategory: LogCategory,
+  options?: { isAdmin?: boolean }
 ): Record<string, unknown> {
   const baseParams: Record<string, unknown> = {
     ...(filters.startTime && { startTime: filters.startTime.getTime() }),
@@ -58,9 +59,10 @@ export function buildSearchParams(
         ...(commonFilters.upstreamRequestId && {
           upstreamRequestId: commonFilters.upstreamRequestId,
         }),
-        ...(commonFilters.sensitiveDetectionStatus && {
-          sensitiveDetectionStatus: commonFilters.sensitiveDetectionStatus,
-        }),
+        ...(options?.isAdmin &&
+          commonFilters.sensitiveDetectionStatus && {
+            sensitiveDetectionStatus: commonFilters.sensitiveDetectionStatus,
+          }),
       }
     }
     case 'drawing': {

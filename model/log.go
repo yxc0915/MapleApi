@@ -151,6 +151,12 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "request_body_bytes")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
+		logs[i].SensitiveDetectionStatus = ""
+		logs[i].SensitiveDetectionChecked = false
+		logs[i].SensitiveDetectionTrigger = ""
+		logs[i].SensitiveDetectionObjects = ""
+		logs[i].SensitiveDetectionReason = ""
+		logs[i].SensitiveDetectionDetectorStatus = 0
 	}
 	assignDisplayLogIds(logs, startIdx)
 }
@@ -649,7 +655,7 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
-func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string, sensitiveDetectionStatus string) (logs []*Log, total int64, err error) {
+func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -668,9 +674,6 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	}
 	if upstreamRequestId != "" {
 		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
-	if sensitiveDetectionStatus != "" {
-		tx = tx.Where("logs.sensitive_detection_status = ?", sensitiveDetectionStatus)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)

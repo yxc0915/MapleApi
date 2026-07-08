@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import { buildQueryParams } from './lib/utils'
+import { buildQueryParams } from './lib/query'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -74,14 +74,20 @@ export const getAllLogs = (params: GetLogsParams = {}) =>
   fetchLogs('/api/log', params, true)
 
 export const getUserLogs = (
-  params: Omit<GetLogsParams, 'username' | 'channel'> = {}
+  params: Omit<
+    GetLogsParams,
+    'username' | 'channel' | 'sensitive_detection_status'
+  > = {}
 ) => fetchLogs('/api/log', params, false)
 
 export const getLogStats = (params: GetLogStatsParams = {}) =>
   fetchLogStats('/api/log', params, true)
 
 export const getUserLogStats = (
-  params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
+  params: Omit<
+    GetLogStatsParams,
+    'username' | 'channel' | 'sensitive_detection_status'
+  > = {}
 ) => fetchLogStats('/api/log', params, false)
 
 export async function getUserInfo(

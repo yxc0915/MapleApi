@@ -139,7 +139,9 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
-      sensitiveDetectionStatus: searchParams.sensitiveDetectionStatus,
+      sensitiveDetectionStatus: isAdmin
+        ? searchParams.sensitiveDetectionStatus
+        : undefined,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -154,8 +156,9 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
-      sensitiveDetectionStatus:
-        searchParams.sensitiveDetectionStatus || undefined,
+      sensitiveDetectionStatus: isAdmin
+        ? searchParams.sensitiveDetectionStatus || undefined
+        : undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -174,6 +177,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.upstreamRequestId,
     searchParams.sensitiveDetectionStatus,
     searchParams.type,
+    isAdmin,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
   const activeDraft =
@@ -197,7 +201,7 @@ export function CommonLogsFilterBar<TData>(
   )
 
   const handleApply = useCallback(() => {
-    const filterParams = buildSearchParams(filters, 'common')
+    const filterParams = buildSearchParams(filters, 'common', { isAdmin })
     navigate({
       to: '/usage-logs/$section',
       params: { section: 'common' },
@@ -209,7 +213,7 @@ export function CommonLogsFilterBar<TData>(
     })
     queryClient.invalidateQueries({ queryKey: ['logs'] })
     queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
-  }, [filters, logType, navigate, queryClient])
+  }, [filters, isAdmin, logType, navigate, queryClient])
 
   const handleReset = useCallback(() => {
     const { start, end } = getDefaultTimeRange()
@@ -250,10 +254,12 @@ export function CommonLogsFilterBar<TData>(
     !!filters.channel ||
     !!filters.requestId ||
     !!filters.upstreamRequestId ||
-    !!filters.sensitiveDetectionStatus
+    !!(isAdmin && filters.sensitiveDetectionStatus)
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
-  const hasSensitiveDetectionFilter = !!filters.sensitiveDetectionStatus
+  const hasSensitiveDetectionFilter = !!(
+    isAdmin && filters.sensitiveDetectionStatus
+  )
   const hasAdditionalFilters =
     !!filters.model ||
     !!filters.group ||
@@ -267,7 +273,7 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
-    filters.sensitiveDetectionStatus,
+    isAdmin ? filters.sensitiveDetectionStatus : undefined,
   ].filter(Boolean).length
   const sensitiveType = sensitiveVisible ? 'text' : 'password'
   const logTypeItems = useMemo(
@@ -389,35 +395,36 @@ export function CommonLogsFilterBar<TData>(
       </Select>
     </LogsFilterField>
   )
+  const detectionStatusFilter = isAdmin ? (
+    <LogsFilterField>
+      <Select
+        items={detectionStatusItems}
+        value={detectionStatusValue}
+        onValueChange={(value) => {
+          handleChange(
+            'sensitiveDetectionStatus',
+            value && value !== SENSITIVE_DETECTION_ALL_VALUE ? value : undefined
+          )
+        }}
+      >
+        <SelectTrigger>
+          <SelectValue>{detectionStatusLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent alignItemWithTrigger={false}>
+          <SelectGroup>
+            {SENSITIVE_DETECTION_STATUS_FILTERS.map((status) => (
+              <SelectItem key={status.value} value={status.value}>
+                {t(status.label)}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </LogsFilterField>
+  ) : null
   const advancedFilters = (
     <>
-      <LogsFilterField>
-        <Select
-          items={detectionStatusItems}
-          value={detectionStatusValue}
-          onValueChange={(value) => {
-            handleChange(
-              'sensitiveDetectionStatus',
-              value && value !== SENSITIVE_DETECTION_ALL_VALUE
-                ? value
-                : undefined
-            )
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue>{detectionStatusLabel}</SelectValue>
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false}>
-            <SelectGroup>
-              {SENSITIVE_DETECTION_STATUS_FILTERS.map((status) => (
-                <SelectItem key={status.value} value={status.value}>
-                  {t(status.label)}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </LogsFilterField>
+      {detectionStatusFilter}
       <LogsFilterField>
         <LogsFilterInput
           placeholder={t('Token Name')}
