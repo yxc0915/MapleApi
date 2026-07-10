@@ -95,7 +95,7 @@ export function useDrawingLogsColumns(
 
         return (
           <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
+            <span className='truncate text-xs tabular-nums'>
               {formatTimestampToDate(submitTime, 'milliseconds')}
             </span>
             <StatusBadge
@@ -129,7 +129,6 @@ export function useDrawingLogsColumns(
           icon={getDrawingTypeIcon(action)}
           size='sm'
           copyable={false}
-          className='-ml-1.5'
         />
       )
     },
@@ -152,7 +151,7 @@ export function useDrawingLogsColumns(
             copyText={mjId}
             variant='neutral'
             size='sm'
-            className='border-border/60 bg-muted/30 !text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
+            className='border-border/60 bg-muted/30 text-foreground max-w-full truncate rounded-md border px-1.5 py-0.5 font-mono'
           />
         </div>
       )
@@ -181,7 +180,6 @@ export function useDrawingLogsColumns(
             variant={mjSubmitResultMapper.getVariant(String(code))}
             size='sm'
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { type ColumnDef } from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell, TruncatedCell } from '@/components/data-table'
@@ -35,7 +35,7 @@ import { formatQuota, formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { API_KEY_STATUSES } from '../constants'
-import { type ApiKey } from '../types'
+import type { ApiKey } from '../types'
 import {
   ApiKeyCell,
   ModelLimitsCell,
@@ -44,9 +44,13 @@ import {
 import { DataTableRowActions } from './data-table-row-actions'
 
 function getQuotaProgressColor(percentage: number): string {
-  if (percentage <= 10) return '[&_[data-slot=progress-indicator]]:bg-rose-500'
-  if (percentage <= 30) return '[&_[data-slot=progress-indicator]]:bg-amber-500'
-  return '[&_[data-slot=progress-indicator]]:bg-emerald-500'
+  if (percentage <= 10) {
+    return '[&_[data-slot=progress-indicator]]:bg-destructive'
+  }
+  if (percentage <= 30) {
+    return '[&_[data-slot=progress-indicator]]:bg-warning'
+  }
+  return '[&_[data-slot=progress-indicator]]:bg-success'
 }
 
 function useGroupRatios(): Record<string, number> {
@@ -116,7 +120,6 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
             label={t(statusConfig.label)}
             variant={statusConfig.variant}
             copyable={false}
-            className='-ml-1.5'
           />
         )
       },
@@ -144,7 +147,6 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
               label={t('Unlimited')}
               variant='neutral'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         }
@@ -224,7 +226,6 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         }
         return (
           <TruncatedCell
-            className='-ml-1.5'
             tooltipContent={group || '-'}
             tooltipClassName='break-all'
           >
@@ -257,7 +258,7 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
       accessorKey: 'created_time',
       header: t('Created'),
       cell: ({ row }) => (
-        <span className='text-muted-foreground block truncate font-mono text-xs tabular-nums'>
+        <span className='text-muted-foreground block truncate text-xs tabular-nums'>
           {formatTimestampToDate(row.getValue('created_time'))}
         </span>
       ),
@@ -273,7 +274,7 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
           return <span className='text-muted-foreground text-xs'>-</span>
         }
         return (
-          <span className='text-muted-foreground block truncate font-mono text-xs tabular-nums'>
+          <span className='text-muted-foreground block truncate text-xs tabular-nums'>
             {formatTimestampToDate(accessedTime)}
           </span>
         )
@@ -292,7 +293,6 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
               label={t('Never')}
               variant='neutral'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         }
@@ -300,7 +300,7 @@ export function useApiKeysColumns(): ColumnDef<ApiKey>[] {
         return (
           <span
             className={cn(
-              'block truncate font-mono text-xs tabular-nums',
+              'block truncate text-xs tabular-nums',
               isExpired ? 'text-destructive' : 'text-muted-foreground'
             )}
           >
