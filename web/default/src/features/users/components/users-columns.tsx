@@ -149,7 +149,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
 
         return (
           <Tooltip>
-            <TooltipTrigger render={<div className='cursor-help' />}>
+            <TooltipTrigger render={<div className='-ml-1.5 cursor-help' />}>
               <StatusBadge
                 label={t(statusConfig.labelKey)}
                 variant={statusConfig.variant}
@@ -188,6 +188,7 @@ export function useUsersColumns(): ColumnDef<User>[] {
               label={t('No Quota')}
               variant='neutral'
               copyable={false}
+              className='-ml-1.5'
             />
           )
         }

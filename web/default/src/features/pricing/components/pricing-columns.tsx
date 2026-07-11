@@ -28,7 +28,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge } from '@/components/status-badge'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-import { DEFAULT_TOKEN_UNIT, QUOTA_TYPE_VALUES } from '../constants'
+import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
@@ -41,6 +41,7 @@ import {
   stripTrailingZeros,
 } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
+import { ModelBillingModeBadge } from './model-billing-mode-badge'
 
 // ----------------------------------------------------------------------------
 // Pricing Table Columns
@@ -97,17 +98,10 @@ export function usePricingColumns(
     {
       accessorKey: 'quota_type',
       header: t('Type'),
-      cell: ({ row }) => {
-        const isTokenBased = row.original.quota_type === QUOTA_TYPE_VALUES.TOKEN
-        return (
-          <StatusBadge
-            label={isTokenBased ? t('Token') : t('Request')}
-            variant={isTokenBased ? 'info' : 'neutral'}
-            copyable={false}
-          />
-        )
-      },
-      size: 80,
+      cell: ({ row }) => (
+        <ModelBillingModeBadge model={row.original} className='-ml-1.5' />
+      ),
+      size: 110,
       enableSorting: false,
     },
 
@@ -135,13 +129,13 @@ export function usePricingColumns(
           if (dynamicSummary.isSpecialExpression) {
             return (
               <div className='max-w-full min-w-0'>
-                <div className='text-warning text-xs font-medium'>
+                <div className='text-xs font-medium text-amber-700 dark:text-amber-300'>
                   {t('Special billing expression')}
                 </div>
-                <div className='text-muted-foreground text-xs'>
+                <div className='text-muted-foreground text-[11px]'>
                   {t('Unable to parse structured pricing')}
                 </div>
-                <code className='text-muted-foreground/70 mt-1 line-clamp-2 block font-mono text-xs leading-relaxed break-all'>
+                <code className='text-muted-foreground/70 mt-1 line-clamp-2 block font-mono text-[10px] leading-relaxed break-all'>
                   {dynamicSummary.rawExpression}
                 </code>
               </div>
@@ -159,7 +153,7 @@ export function usePricingColumns(
 
           return (
             <div className='max-w-full min-w-0'>
-              <span className='text-sm tabular-nums'>
+              <span className='font-mono text-sm tabular-nums'>
                 {primaryEntries.map((entry, index) => (
                   <span key={entry.key}>
                     {index > 0 && (
@@ -169,7 +163,7 @@ export function usePricingColumns(
                   </span>
                 ))}
               </span>
-              <div className='text-muted-foreground/50 text-xs'>
+              <div className='text-muted-foreground/50 text-[10px]'>
                 / {tokenUnitLabel} tokens
                 {dynamicSummary.tierCount > 1 &&
                   ` · ${t('{{count}} tiers', {
@@ -208,12 +202,12 @@ export function usePricingColumns(
 
           return (
             <div className='max-w-full min-w-0'>
-              <span className='text-sm tabular-nums'>
+              <span className='font-mono text-sm tabular-nums'>
                 {inputPrice}
                 <span className='text-muted-foreground/40 mx-1'>/</span>
                 {outputPrice}
               </span>
-              <div className='text-muted-foreground/50 text-xs'>
+              <div className='text-muted-foreground/50 text-[10px]'>
                 / {tokenUnitLabel} tokens
               </div>
             </div>
@@ -232,8 +226,8 @@ export function usePricingColumns(
 
         return (
           <div className='max-w-full min-w-0'>
-            <span className='text-sm tabular-nums'>{price}</span>
-            <div className='text-muted-foreground/50 text-xs'>
+            <span className='font-mono text-sm tabular-nums'>{price}</span>
+            <div className='text-muted-foreground/50 text-[10px]'>
               / {t('request')}
             </div>
           </div>
@@ -278,10 +272,10 @@ export function usePricingColumns(
 
           return (
             <div className='max-w-full min-w-0'>
-              <span className='text-sm tabular-nums'>
+              <span className='font-mono text-sm tabular-nums'>
                 {stripTrailingZeros(cacheEntry.formatted)}
               </span>
-              <div className='text-muted-foreground/50 text-xs'>
+              <div className='text-muted-foreground/50 text-[10px]'>
                 / {tokenUnitLabel}
               </div>
             </div>
@@ -308,8 +302,10 @@ export function usePricingColumns(
 
         return (
           <div className='max-w-full min-w-0'>
-            <span className='text-sm tabular-nums'>{cachedPrice}</span>
-            <div className='text-muted-foreground/50 text-xs'>
+            <span className='font-mono text-sm tabular-nums'>
+              {cachedPrice}
+            </span>
+            <div className='text-muted-foreground/50 text-[10px]'>
               / {tokenUnitLabel}
             </div>
           </div>

@@ -36,6 +36,7 @@ import {
   Timer,
   type LucideIcon,
 } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -45,10 +46,12 @@ import {
   CardStaggerItem,
 } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
+import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
+import { MOTION_TRANSITION } from '@/lib/motion'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -115,6 +118,7 @@ interface HeroSignal {
   label: string
   value: string
   icon: LucideIcon
+  tone: IconBadgeTone
 }
 
 function getSavedSetupGuideExpanded(): boolean | null {
@@ -181,7 +185,7 @@ function SetupGuideBackdrop(props: { compact?: boolean }) {
     <>
       <div
         className={cn(
-          'pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_48%_120%_at_78%_0%,color-mix(in_oklch,var(--primary)_8%,transparent)_0%,transparent_62%),linear-gradient(112deg,color-mix(in_oklch,var(--card)_98%,var(--primary)_2%)_0%,color-mix(in_oklch,var(--card)_94%,var(--muted)_6%)_48%,color-mix(in_oklch,var(--background)_92%,var(--accent)_8%)_100%)] dark:opacity-65',
+          'pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_48%_120%_at_78%_0%,color-mix(in_oklch,var(--overview-accent-1)_14%,transparent)_0%,transparent_62%),linear-gradient(112deg,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-2)_6%)_0%,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-3)_6%)_48%,color-mix(in_oklch,var(--background)_90%,var(--overview-accent-1)_10%)_100%)] dark:opacity-60',
           props.compact
             ? '[mask-image:linear-gradient(90deg,black_0%,black_48%,transparent_74%)] opacity-55'
             : 'opacity-85'
@@ -200,7 +204,7 @@ function SetupGuideBackdrop(props: { compact?: boolean }) {
             'absolute right-3 [mask-image:linear-gradient(90deg,transparent_0%,black_30%,black_82%,transparent_100%)] text-right tracking-[0.38em] whitespace-pre',
             props.compact
               ? '-top-6 text-[9px] leading-4'
-              : 'top-1 text-xs leading-5'
+              : 'top-1 text-[11px] leading-5'
           )}
         >
           {SETUP_GUIDE_CODE_PATTERN}
@@ -252,7 +256,7 @@ function StartStepItem(props: {
           </span>
           <span className='flex min-w-0 flex-col gap-0.5'>
             <span className='flex items-center gap-2 text-sm font-medium'>
-              <span className='text-muted-foreground text-xs tabular-nums'>
+              <span className='text-muted-foreground font-mono text-xs tabular-nums'>
                 {props.index + 1}.
               </span>
               <span className='truncate'>{props.step.title}</span>
@@ -276,6 +280,7 @@ function RequestPreview(props: {
   signals: HeroSignal[]
 }) {
   const { t } = useTranslation()
+  const shouldReduceMotion = useReducedMotion()
   const [isCopying, setIsCopying] = useState(false)
   const { copyToClipboard } = useCopyToClipboard({ notify: false })
   const previewCurl = buildCurlCommand({
@@ -313,12 +318,26 @@ function RequestPreview(props: {
   }
 
   return (
-    <div className='bg-background relative overflow-hidden rounded-2xl border p-3'>
+    <motion.div
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }}
+      animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+      transition={MOTION_TRANSITION.slow}
+      className='bg-background/75 relative overflow-hidden rounded-2xl border p-3 shadow-sm backdrop-blur'
+    >
+      {!shouldReduceMotion && (
+        <motion.div
+          className='via-foreground/30 pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent to-transparent'
+          animate={{ x: ['-100%', '100%'] }}
+          transition={{ duration: 3.2, repeat: Infinity, ease: 'easeInOut' }}
+          aria-hidden='true'
+        />
+      )}
+
       <div className='flex items-center justify-between gap-3 border-b pb-3'>
         <div className='flex min-w-0 items-center gap-2'>
-          <span className='bg-muted flex size-8 shrink-0 items-center justify-center rounded-lg'>
-            <TerminalSquare className='size-4' aria-hidden='true' />
-          </span>
+          <IconBadge tone='info'>
+            <TerminalSquare />
+          </IconBadge>
           <div className='min-w-0'>
             <div className='truncate text-sm font-medium'>
               {t('First API request')}
@@ -356,9 +375,9 @@ function RequestPreview(props: {
           <span className='bg-success size-2 rounded-full' />
         </div>
         <div className='flex flex-col gap-1 overflow-hidden'>
-          {previewLines.map((line, index) => (
+          {previewLines.map((line) => (
             <code
-              key={`${line}-${index}`}
+              key={line}
               className='text-muted-foreground truncate'
               title={line}
             >
@@ -378,10 +397,9 @@ function RequestPreview(props: {
               className='bg-muted/40 flex items-center justify-between gap-3 rounded-xl px-3 py-2'
             >
               <span className='flex min-w-0 items-center gap-2'>
-                <Icon
-                  className='text-muted-foreground size-3.5 shrink-0'
-                  aria-hidden='true'
-                />
+                <IconBadge tone={signal.tone} size='xs'>
+                  <Icon />
+                </IconBadge>
                 <span className='truncate text-xs font-medium'>
                   {signal.label}
                 </span>
@@ -393,7 +411,7 @@ function RequestPreview(props: {
           )
         })}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -548,16 +566,19 @@ export function OverviewDashboard() {
         label: t('Route active'),
         value: apiInfoItems.length > 0 ? t('Online') : t('Current domain'),
         icon: RadioTower,
+        tone: 'info',
       },
       {
         label: t('Auth configured'),
         value: preferredKey ? t('Secured') : t('Needs API key'),
         icon: ShieldCheck,
+        tone: 'success',
       },
       {
         label: t('Model selected'),
         value: modelsQuery.data?.[0] ?? t('Loading'),
         icon: Timer,
+        tone: 'chart-4',
       },
     ],
     [apiInfoItems.length, modelsQuery.data, preferredKey, t]
