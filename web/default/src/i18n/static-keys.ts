@@ -560,6 +560,13 @@ export const STATIC_I18N_KEYS = [
   'Top flagged objects',
   'Unmarked',
 
+  // Advanced Custom model discovery
+  'Only one OpenAI Models route is allowed',
+  'OpenAI Models route does not support client model rules',
+  'OpenAI Models route must use native forwarding',
+  'OpenAI Models upstream path must not contain {model}',
+  'OpenAI Models route is required to enable upstream model checks',
+
   // Dashboard flow stages (labels/descriptions passed to t at runtime)
   'User',
   'Node',
