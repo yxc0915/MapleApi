@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	//"os"
 	//"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,30 +16,6 @@ var SystemName = "New API"
 var Footer = ""
 var Logo = ""
 var TopUpLink = ""
-
-const FrontendThemeDefault = "default"
-
-func GetTheme() string {
-	return FrontendThemeDefault
-}
-
-// SetTheme is retained for compatibility with persisted theme.frontend options.
-// The classic frontend is no longer built or served, so the runtime theme is fixed.
-func SetTheme(_ string) {
-}
-
-// ThemeAwarePath rewrites legacy /console/* paths to default-frontend routes.
-func ThemeAwarePath(suffix string) string {
-	switch {
-	case strings.HasPrefix(suffix, "/console/topup"):
-		return strings.Replace(suffix, "/console/topup", "/wallet", 1)
-	case strings.HasPrefix(suffix, "/console/log"):
-		return strings.Replace(suffix, "/console/log", "/usage-logs", 1)
-	case strings.HasPrefix(suffix, "/console/personal"):
-		return strings.Replace(suffix, "/console/personal", "/profile", 1)
-	}
-	return suffix
-}
 
 // var ChatLink = ""
 // var ChatLink2 = ""
@@ -61,6 +36,22 @@ var SessionSecret = uuid.New().String()
 var CryptoSecret = uuid.New().String()
 var SessionCookieSecure = false
 var SessionCookieTrustedURLs []string
+
+const (
+	DefaultUserSessionActiveLimit           = 50
+	DefaultUserSessionIssuanceLimit         = 100
+	DefaultUserSessionIssuanceWindowSeconds = 24 * 60 * 60
+	DefaultUserSessionRevokedRetentionDays  = 7
+	DefaultUserSessionHourlyAlertThreshold  = 5000
+)
+
+var (
+	UserSessionActiveLimit           = DefaultUserSessionActiveLimit
+	UserSessionIssuanceLimit         = DefaultUserSessionIssuanceLimit
+	UserSessionIssuanceWindowSeconds = int64(DefaultUserSessionIssuanceWindowSeconds)
+	UserSessionRevokedRetentionDays  = DefaultUserSessionRevokedRetentionDays
+	UserSessionHourlyAlertThreshold  = DefaultUserSessionHourlyAlertThreshold
+)
 
 var OptionMap map[string]string
 var OptionMapRWMutex sync.RWMutex

@@ -271,6 +271,12 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
+	if key == retiredThemeOptionKey {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, key)
+		common.OptionMapRWMutex.Unlock()
+		return nil
+	}
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
 	common.OptionMap[key] = value
@@ -657,11 +663,6 @@ func handleConfigUpdate(key, value string) bool {
 	} else if configName == "billing_setting" {
 		InvalidatePricingCache()
 		ratio_setting.InvalidateExposedDataCache()
-	} else if configName == "theme" {
-		system_setting.UpdateAndSyncTheme()
-		if configKey == "frontend" {
-			common.OptionMap[key] = system_setting.GetThemeSettings().Frontend
-		}
 	}
 
 	return true // 已处理
