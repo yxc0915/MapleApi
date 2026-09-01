@@ -26,6 +26,7 @@ export interface LoginPayload {
   username: string
   password: string
   turnstile?: string
+  passwordEncryptionEnabled?: boolean
 }
 
 export interface TwoFAPayload {
@@ -103,6 +104,7 @@ export interface SystemStatus {
     oidc_enabled?: boolean
     oidc_authorization_endpoint?: string
     oidc_client_id?: string
+    oidc_display_name?: string
     linuxdo_oauth?: boolean
     linuxdo_client_id?: string
     telegram_oauth?: boolean
@@ -132,6 +134,7 @@ export interface SystemStatus {
     oauth_register_enabled?: boolean
     register_enabled?: boolean
     password_login_enabled?: boolean
+    password_login_encryption_enabled?: boolean
     password_register_enabled?: boolean
     custom_oauth_providers?: CustomOAuthProviderInfo[]
     [key: string]: unknown
@@ -147,6 +150,7 @@ export interface SystemStatus {
   oidc_enabled?: boolean
   oidc_authorization_endpoint?: string
   oidc_client_id?: string
+  oidc_display_name?: string
   linuxdo_oauth?: boolean
   linuxdo_client_id?: string
   telegram_oauth?: boolean
@@ -176,6 +180,7 @@ export interface SystemStatus {
   oauth_register_enabled?: boolean
   register_enabled?: boolean
   password_login_enabled?: boolean
+  password_login_encryption_enabled?: boolean
   password_register_enabled?: boolean
   custom_oauth_providers?: CustomOAuthProviderInfo[]
   [key: string]: unknown

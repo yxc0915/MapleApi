@@ -17,11 +17,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/common/limiter"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
-	"github.com/QuantumNous/new-api/types"
+	rktypes "github.com/QuantumNous/new-api/relaykit/types"
+	sdtypes "github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -58,22 +59,22 @@ type SensitiveDetectionConnectionTestConfig struct {
 	TimeoutSeconds int
 }
 
-func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnabled bool, groupEnabled bool) *types.NewAPIError {
+func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnabled bool, groupEnabled bool) *rktypes.NewAPIError {
 	if common.GetContextKeyBool(c, constant.ContextKeySensitiveDetectionDone) {
 		return nil
 	}
 
 	trigger := sensitiveDetectionTrigger(channelEnabled, groupEnabled)
 	if trigger == "" {
-		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-			Status: types.SensitiveDetectionStatusBypassed,
+		setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+			Status: sdtypes.SensitiveDetectionStatusBypassed,
 		})
 		return nil
 	}
 
 	if !setting.SensitiveDetectionConfigured() {
-		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusBypassed,
+		setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusBypassed,
 			Trigger: trigger,
 			Reason:  "detector_not_configured",
 		})
@@ -83,8 +84,8 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	text, ok := SensitiveDetectionRequestText(request)
 	text = strings.TrimSpace(text)
 	if !ok || text == "" {
-		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusBypassed,
+		setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusBypassed,
 			Trigger: trigger,
 			Reason:  "no_supported_text",
 		})
@@ -101,20 +102,20 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		cached.Checked = true
 		setSensitiveDetectionResult(c, cached)
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
-		if cached.Status == types.SensitiveDetectionStatusBlocked {
+		if cached.Status == sdtypes.SensitiveDetectionStatusBlocked {
 			reason := cached.Reason
 			if reason == "" {
 				reason = "prompt blocked by sensitive detection"
 			}
-			return types.NewErrorWithStatusCode(errors.New(reason), types.ErrorCodePromptBlocked, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+			return rktypes.NewErrorWithStatusCode(errors.New(reason), rktypes.ErrorCodePromptBlocked, http.StatusForbidden, rktypes.ErrOptionWithSkipRetry())
 		}
 		return nil
 	}
 
 	// 命中熔断时直接放行：检测模型故障不应把网关拖死。
 	if !sensitiveDetectionBreakerAllows() {
-		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusErrorOpen,
+		setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusErrorOpen,
 			Trigger: trigger,
 			Checked: true,
 			Reason:  "breaker_open",
@@ -133,8 +134,8 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 		ctx = c.Request.Context()
 	}
 	if !allowSensitiveDetectionCall(ctx) {
-		setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusErrorOpen,
+		setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusErrorOpen,
 			Trigger: trigger,
 			Checked: true,
 			Reason:  "rate_limited",
@@ -149,7 +150,7 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	if err != nil {
 		// 仅调用失败（网络/超时/非 2xx）计入熔断；业务拦截(status!=200)不算失败。
 		recordSensitiveDetectionCallOutcome(false)
-		result.Status = types.SensitiveDetectionStatusErrorOpen
+		result.Status = sdtypes.SensitiveDetectionStatusErrorOpen
 		result.Reason = truncateSensitiveDetectionText(err.Error(), 512)
 		setSensitiveDetectionResult(c, result)
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
@@ -161,14 +162,14 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	recordSensitiveDetectionCallOutcome(true)
 
 	if result.DetectorStatus == http.StatusOK {
-		result.Status = types.SensitiveDetectionStatusAllowed
+		result.Status = sdtypes.SensitiveDetectionStatusAllowed
 		storeCachedSensitiveDetectionResult(trigger, text, result)
 		setSensitiveDetectionResult(c, result)
 		common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 		return nil
 	}
 
-	result.Status = types.SensitiveDetectionStatusBlocked
+	result.Status = sdtypes.SensitiveDetectionStatusBlocked
 	storeCachedSensitiveDetectionResult(trigger, text, result)
 	setSensitiveDetectionResult(c, result)
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
@@ -176,7 +177,7 @@ func EvaluateSensitiveDetection(c *gin.Context, request dto.Request, channelEnab
 	if reason == "" {
 		reason = "prompt blocked by sensitive detection"
 	}
-	return types.NewErrorWithStatusCode(errors.New(reason), types.ErrorCodePromptBlocked, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+	return rktypes.NewErrorWithStatusCode(errors.New(reason), rktypes.ErrorCodePromptBlocked, http.StatusForbidden, rktypes.ErrOptionWithSkipRetry())
 }
 
 func SetSensitiveDetectionResponseText(c *gin.Context, text string) {
@@ -214,15 +215,15 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 
 	trigger := sensitiveDetectionPostTrigger(channelEnabled, groupEnabled)
 	if trigger == "" {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status: types.SensitiveDetectionStatusBypassed,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status: sdtypes.SensitiveDetectionStatusBypassed,
 		})
 		return
 	}
 
 	if !setting.SensitiveDetectionConfigured() {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusBypassed,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusBypassed,
 			Trigger: trigger,
 			Reason:  "detector_not_configured",
 		})
@@ -232,8 +233,8 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 	userInput, _ := SensitiveDetectionRequestText(request)
 	text, ok := sensitiveDetectionPostText(userInput, responseText)
 	if !ok {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusBypassed,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusBypassed,
 			Trigger: trigger,
 			Reason:  "no_supported_text",
 		})
@@ -242,8 +243,8 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 
 	if maxRunes := setting.SensitiveDetectionMaxRequestRunes; maxRunes > 0 {
 		if runeCount := utf8.RuneCountInString(text); runeCount > maxRunes {
-			finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-				Status:         types.SensitiveDetectionStatusErrorOpen,
+			finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+				Status:         sdtypes.SensitiveDetectionStatusErrorOpen,
 				Trigger:        trigger,
 				Checked:        true,
 				Reason:         fmt.Sprintf("post_detection_text_too_large: %d>%d runes", runeCount, maxRunes),
@@ -256,19 +257,19 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 	if cached, found := loadCachedSensitiveDetectionResult(trigger, text); found {
 		cached.Trigger = trigger
 		cached.Checked = true
-		if cached.Status == types.SensitiveDetectionStatusBlocked {
-			cached.Status = types.SensitiveDetectionStatusFlagged
+		if cached.Status == sdtypes.SensitiveDetectionStatusBlocked {
+			cached.Status = sdtypes.SensitiveDetectionStatusFlagged
 		}
 		finishPostSensitiveDetection(c, cached)
-		if cached.Status == types.SensitiveDetectionStatusFlagged {
+		if cached.Status == sdtypes.SensitiveDetectionStatusFlagged {
 			recordPostSensitiveDetectionAudit(c, cached, responseText)
 		}
 		return
 	}
 
 	if !sensitiveDetectionBreakerAllows() {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusErrorOpen,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusErrorOpen,
 			Trigger: trigger,
 			Checked: true,
 			Reason:  "breaker_open",
@@ -278,8 +279,8 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 
 	ctx := context.Background()
 	if reason, limited := postSensitiveDetectionSubjectRateLimitReason(ctx, c); limited {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status:         types.SensitiveDetectionStatusErrorOpen,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status:         sdtypes.SensitiveDetectionStatusErrorOpen,
 			Trigger:        trigger,
 			Checked:        true,
 			Reason:         reason,
@@ -289,8 +290,8 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 	}
 
 	if !allowSensitiveDetectionCall(ctx) {
-		finishPostSensitiveDetection(c, types.SensitiveDetectionResult{
-			Status:  types.SensitiveDetectionStatusErrorOpen,
+		finishPostSensitiveDetection(c, sdtypes.SensitiveDetectionResult{
+			Status:  sdtypes.SensitiveDetectionStatusErrorOpen,
 			Trigger: trigger,
 			Checked: true,
 			Reason:  "rate_limited",
@@ -309,7 +310,7 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 	result.Checked = true
 	if err != nil {
 		recordSensitiveDetectionCallOutcome(false)
-		result.Status = types.SensitiveDetectionStatusErrorOpen
+		result.Status = sdtypes.SensitiveDetectionStatusErrorOpen
 		result.Reason = truncateSensitiveDetectionText(err.Error(), 512)
 		finishPostSensitiveDetection(c, result)
 		logger.LogWarn(c, fmt.Sprintf("post sensitive detection failed open: %s", common.LocalLogPreview(err.Error())))
@@ -318,30 +319,30 @@ func EvaluatePostSensitiveDetection(c *gin.Context, request dto.Request, respons
 
 	recordSensitiveDetectionCallOutcome(true)
 	if result.DetectorStatus == http.StatusOK {
-		result.Status = types.SensitiveDetectionStatusAllowed
+		result.Status = sdtypes.SensitiveDetectionStatusAllowed
 		storeCachedSensitiveDetectionResult(trigger, text, result)
 		finishPostSensitiveDetection(c, result)
 		return
 	}
 
-	result.Status = types.SensitiveDetectionStatusFlagged
+	result.Status = sdtypes.SensitiveDetectionStatusFlagged
 	storeCachedSensitiveDetectionResult(trigger, text, result)
 	finishPostSensitiveDetection(c, result)
 	recordPostSensitiveDetectionAudit(c, result, responseText)
 }
 
-func TestSensitiveDetectionConnection(ctx context.Context, config SensitiveDetectionConnectionTestConfig) (types.SensitiveDetectionResult, error) {
+func TestSensitiveDetectionConnection(ctx context.Context, config SensitiveDetectionConnectionTestConfig) (sdtypes.SensitiveDetectionResult, error) {
 	if strings.TrimSpace(config.Model) == "" {
-		return types.SensitiveDetectionResult{}, errors.New("detector model is required")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector model is required")
 	}
 	if strings.TrimSpace(config.BaseURL) == "" {
-		return types.SensitiveDetectionResult{}, errors.New("detector base url is required")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector base url is required")
 	}
 	if strings.TrimSpace(config.APIKey) == "" {
-		return types.SensitiveDetectionResult{}, errors.New("detector api key is required")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector api key is required")
 	}
 	if strings.TrimSpace(config.Prompt) == "" {
-		return types.SensitiveDetectionResult{}, errors.New("detector prompt is required")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector prompt is required")
 	}
 	return callSensitiveDetectionModelWithConfig(ctx, config, "This is a connectivity test request.")
 }
@@ -427,7 +428,7 @@ func sensitiveDetectionPostText(userInput string, modelOutput string) (string, b
 	return sensitiveDetectionJoinedText(parts)
 }
 
-func finishPostSensitiveDetection(c *gin.Context, result types.SensitiveDetectionResult) {
+func finishPostSensitiveDetection(c *gin.Context, result sdtypes.SensitiveDetectionResult) {
 	setSensitiveDetectionResult(c, result)
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
 }
@@ -445,7 +446,7 @@ func postSensitiveDetectionSubjectRateLimitReason(ctx context.Context, c *gin.Co
 	return "", false
 }
 
-func recordPostSensitiveDetectionAudit(c *gin.Context, result types.SensitiveDetectionResult, responseText string) {
+func recordPostSensitiveDetectionAudit(c *gin.Context, result sdtypes.SensitiveDetectionResult, responseText string) {
 	audit, err := model.RecordSensitiveDetectionAudit(c, result, responseText)
 	if err != nil {
 		logger.LogWarn(c, fmt.Sprintf("failed to record post sensitive detection audit: %s", common.LocalLogPreview(err.Error())))
@@ -459,7 +460,7 @@ func recordPostSensitiveDetectionAudit(c *gin.Context, result types.SensitiveDet
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionRequestBodyBytes, audit.RequestBodyBytes)
 }
 
-func rejectOversizedSensitiveDetectionText(c *gin.Context, trigger, text string) *types.NewAPIError {
+func rejectOversizedSensitiveDetectionText(c *gin.Context, trigger, text string) *rktypes.NewAPIError {
 	maxRunes := setting.SensitiveDetectionMaxRequestRunes
 	if maxRunes <= 0 {
 		return nil
@@ -469,18 +470,18 @@ func rejectOversizedSensitiveDetectionText(c *gin.Context, trigger, text string)
 		return nil
 	}
 	reason := fmt.Sprintf("sensitive_detection_request_too_large: %d>%d runes", runeCount, maxRunes)
-	setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-		Status:         types.SensitiveDetectionStatusBlocked,
+	setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+		Status:         sdtypes.SensitiveDetectionStatusBlocked,
 		Trigger:        trigger,
 		Checked:        true,
 		Reason:         reason,
 		DetectorStatus: http.StatusRequestEntityTooLarge,
 	})
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
-	return types.NewErrorWithStatusCode(errors.New("sensitive detection request too large"), types.ErrorCodeInvalidRequest, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+	return rktypes.NewErrorWithStatusCode(errors.New("sensitive detection request too large"), rktypes.ErrorCodeInvalidRequest, http.StatusRequestEntityTooLarge, rktypes.ErrOptionWithSkipRetry())
 }
 
-func enforceSensitiveDetectionSubjectRateLimit(c *gin.Context, trigger string) *types.NewAPIError {
+func enforceSensitiveDetectionSubjectRateLimit(c *gin.Context, trigger string) *rktypes.NewAPIError {
 	if c == nil {
 		return nil
 	}
@@ -528,17 +529,17 @@ func sensitiveDetectionRateLimitRefill(rpm int) int64 {
 	return int64(refill)
 }
 
-func sensitiveDetectionSubjectRateLimitError(c *gin.Context, trigger, scope string) *types.NewAPIError {
+func sensitiveDetectionSubjectRateLimitError(c *gin.Context, trigger, scope string) *rktypes.NewAPIError {
 	reason := "sensitive_detection_" + scope + "_rate_limited"
-	setSensitiveDetectionResult(c, types.SensitiveDetectionResult{
-		Status:         types.SensitiveDetectionStatusBlocked,
+	setSensitiveDetectionResult(c, sdtypes.SensitiveDetectionResult{
+		Status:         sdtypes.SensitiveDetectionStatusBlocked,
 		Trigger:        trigger,
 		Checked:        true,
 		Reason:         reason,
 		DetectorStatus: http.StatusTooManyRequests,
 	})
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionDone, true)
-	return types.NewErrorWithStatusCode(errors.New("sensitive detection rate limit exceeded"), types.ErrorCodeRateLimitExceeded, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+	return rktypes.NewErrorWithStatusCode(errors.New("sensitive detection rate limit exceeded"), rktypes.ErrorCodeRateLimitExceeded, http.StatusTooManyRequests, rktypes.ErrOptionWithSkipRetry())
 }
 
 // allowSensitiveDetectionCall 基于 Redis 令牌桶对发往检测模型的调用做 RPM 限流。
@@ -569,11 +570,11 @@ func allowSensitiveDetectionCall(ctx context.Context) bool {
 	return allowed
 }
 
-func setSensitiveDetectionResult(c *gin.Context, result types.SensitiveDetectionResult) {
+func setSensitiveDetectionResult(c *gin.Context, result sdtypes.SensitiveDetectionResult) {
 	common.SetContextKey(c, constant.ContextKeySensitiveDetectionResult, result)
 }
 
-func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDetectionResult, error) {
+func callSensitiveDetectionModel(c *gin.Context, text string) (sdtypes.SensitiveDetectionResult, error) {
 	config := SensitiveDetectionConnectionTestConfig{
 		Model:          setting.SensitiveDetectionModel,
 		BaseURL:        setting.SensitiveDetectionBaseURL,
@@ -588,7 +589,7 @@ func callSensitiveDetectionModel(c *gin.Context, text string) (types.SensitiveDe
 	return callSensitiveDetectionModelWithConfig(ctx, config, text)
 }
 
-func callSensitiveDetectionModelWithConfig(ctx context.Context, config SensitiveDetectionConnectionTestConfig, text string) (types.SensitiveDetectionResult, error) {
+func callSensitiveDetectionModelWithConfig(ctx context.Context, config SensitiveDetectionConnectionTestConfig, text string) (sdtypes.SensitiveDetectionResult, error) {
 	temperature := 0.0
 	maxTokens := 8
 	payload := sensitiveDetectionRequest{
@@ -610,7 +611,7 @@ func callSensitiveDetectionModelWithConfig(ctx context.Context, config Sensitive
 	}
 	body, err := common.Marshal(payload)
 	if err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return sdtypes.SensitiveDetectionResult{}, err
 	}
 
 	if ctx == nil {
@@ -622,7 +623,7 @@ func callSensitiveDetectionModelWithConfig(ctx context.Context, config Sensitive
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, sensitiveDetectionURL(config.BaseURL), bytes.NewReader(body))
 	if err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return sdtypes.SensitiveDetectionResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(config.APIKey))
@@ -630,46 +631,46 @@ func callSensitiveDetectionModelWithConfig(ctx context.Context, config Sensitive
 	client := getSensitiveDetectionClient()
 	resp, err := client.Do(req)
 	if err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return sdtypes.SensitiveDetectionResult{}, err
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return sdtypes.SensitiveDetectionResult{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return types.SensitiveDetectionResult{}, fmt.Errorf("detector returned status %d", resp.StatusCode)
+		return sdtypes.SensitiveDetectionResult{}, fmt.Errorf("detector returned status %d", resp.StatusCode)
 	}
 
 	var detectorResp sensitiveDetectionResponse
 	if err := common.Unmarshal(respBody, &detectorResp); err != nil {
-		return types.SensitiveDetectionResult{}, err
+		return sdtypes.SensitiveDetectionResult{}, err
 	}
 	if len(detectorResp.Choices) == 0 {
-		return types.SensitiveDetectionResult{}, errors.New("detector returned no choices")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector returned no choices")
 	}
 	content := strings.TrimSpace(detectorResp.Choices[0].Message.Content)
 	if content == "" {
-		return types.SensitiveDetectionResult{}, errors.New("detector returned empty content")
+		return sdtypes.SensitiveDetectionResult{}, errors.New("detector returned empty content")
 	}
 
 	// 优先按 JSON 对象解析（含 status 字段，可携带 reason/objects 等详情）。
 	// 失败时回退到裸整数解析：模型可直接返回 "200" / "499" 这样的纯状态码，
 	// 此时没有 reason/objects，仅依据数字判定放行或拦截。
 	if status, objects, reason, ok := parseSensitiveDetectionJSON(content); ok {
-		return types.SensitiveDetectionResult{
+		return sdtypes.SensitiveDetectionResult{
 			DetectorStatus: status,
 			Objects:        objects,
 			Reason:         reason,
 		}, nil
 	}
 	if status, ok := parseSensitiveDetectionRawInt(content); ok {
-		return types.SensitiveDetectionResult{
+		return sdtypes.SensitiveDetectionResult{
 			DetectorStatus: status,
 		}, nil
 	}
-	return types.SensitiveDetectionResult{}, errors.New("detector content is neither JSON with status nor a bare status integer")
+	return sdtypes.SensitiveDetectionResult{}, errors.New("detector content is neither JSON with status nor a bare status integer")
 }
 
 func sensitiveDetectionUsesBigModelHints(baseURL, model string) bool {

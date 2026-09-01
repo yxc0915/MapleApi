@@ -33,7 +33,7 @@ export {
 
 // Filter utilities
 export { buildSearchParams, getLogCategoryLabel } from './filter'
-export { buildQueryParams } from './query'
+export { buildQueryParams } from './query-params'
 
 // General utilities
 export {

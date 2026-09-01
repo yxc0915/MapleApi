@@ -47,6 +47,7 @@ const getGroupDefaults = (settings: BillingSettings) => ({
   GroupGroupRatio: settings.GroupGroupRatio,
   AutoGroups: settings.AutoGroups,
   SensitiveDetectionGroups: settings.SensitiveDetectionGroups,
+  MaxTokenAutoGroups: settings.MaxTokenAutoGroups,
   DefaultUseAutoGroup: settings.DefaultUseAutoGroup,
   GroupSpecialUsableGroup:
     settings['group_ratio_setting.group_special_usable_group'],
@@ -174,6 +175,13 @@ const BILLING_SECTIONS = [
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}
+        complianceDefaults={{
+          confirmed: settings['payment_setting.compliance_confirmed'] ?? false,
+          termsVersion:
+            settings['payment_setting.compliance_terms_version'] ?? '',
+          confirmedAt: settings['payment_setting.compliance_confirmed_at'] ?? 0,
+          confirmedBy: settings['payment_setting.compliance_confirmed_by'] ?? 0,
+        }}
       />
     ),
   },

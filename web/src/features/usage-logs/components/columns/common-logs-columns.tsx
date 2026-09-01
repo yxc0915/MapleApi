@@ -59,6 +59,7 @@ import {
 } from '../../lib/utils'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
+import { LogCostDisplay } from '../log-cost-display'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
 import { useUsageLogsContext } from '../usage-logs-provider'
@@ -94,12 +95,6 @@ function getGroupRatio(other: LogOtherData | null): number | null {
   return null
 }
 
-function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
-  const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
-  if (!match) return { prefix: '', amount: value }
-  return { prefix: match[1], amount: match[2] }
-}
-
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
@@ -107,14 +102,22 @@ function buildDetailSegments(
   isAdmin: boolean
 ): DetailSegment[] {
   const segments = buildTypeDetailSegments(log, other, t)
+  const adminSegments: DetailSegment[] = []
   // Quota saturation is a rare, admin-only anomaly marker; surface it first
   // and in danger styling so it stands out on the related billing log. The
   // backend already strips admin_info for non-admins; gate on isAdmin too as
   // defense in depth so the marker never leaks if that changes.
   if (isAdmin && other?.admin_info?.quota_saturation) {
-    return [{ text: t('Quota clamped'), danger: true }, ...segments]
+    adminSegments.push({ text: t('Quota clamped'), danger: true })
   }
-  return segments
+  const plugin = isAdmin ? other?.admin_info?.task_plugin : undefined
+  if (plugin) {
+    const version = plugin.version ? ` @ ${plugin.version}` : ''
+    adminSegments.push({
+      text: `${t('Plugin')}: ${plugin.name || plugin.key}${version}`,
+    })
+  }
+  return [...adminSegments, ...segments]
 }
 
 function buildTypeDetailSegments(
@@ -289,7 +292,10 @@ function buildTypeDetailSegments(
   return segments
 }
 
-export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
+export function useCommonLogsColumns(
+  isAdmin: boolean,
+  isRoot: boolean
+): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
     {
@@ -675,6 +681,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return (
           <StreamTpsCell
             isStream={log.is_stream}
+            isTask={other?.is_task === true}
             tokensPerSecond={tokensPerSecond}
             streamStatus={other?.stream_status}
           />
@@ -738,46 +745,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
 
         const quota = row.getValue('quota') as number
         const other = parseLogOther(log.other)
-        const isSubscription = other?.billing_source === 'subscription'
-
-        if (isSubscription) {
-          return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <StatusBadge
-                      label={t('Subscription')}
-                      variant='success'
-                      size='sm'
-                      copyable={false}
-                      className='cursor-help'
-                    />
-                  }
-                />
-                <TooltipContent>
-                  <span>
-                    {t('Deducted by subscription')}: {formatLogQuota(quota)}
-                  </span>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )
-        }
-
-        const quotaStr = formatLogQuota(quota)
-        const quotaDisplay = splitQuotaDisplay(quotaStr)
-
-        return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='border-border/80 bg-muted/60 inline-flex h-6 w-fit items-center rounded-md border px-2 [font-family:var(--font-body)] text-sm leading-none font-semibold tabular-nums'>
-              {quotaDisplay.prefix && (
-                <span className='mr-1'>{quotaDisplay.prefix}</span>
-              )}
-              <span>{quotaDisplay.amount}</span>
-            </span>
-          </div>
-        )
+        return <LogCostDisplay quota={quota} other={other} />
       },
     },
 
@@ -858,6 +826,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             <DetailsDialog
               log={log}
               isAdmin={isAdmin}
+              isRoot={isRoot}
               open={dialogOpen}
               onOpenChange={setDialogOpen}
             />
