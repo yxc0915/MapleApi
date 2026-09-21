@@ -127,6 +127,7 @@ const createModelSchema = (t: Translate) =>
     ExposeRatioEnabled: z.boolean(),
     BillingMode: createJsonStringField(t),
     BillingExpr: createJsonStringField(t),
+    PluginBillingExpr: createJsonStringField(t),
   })
 
 const createGroupSchema = (t: Translate) =>
@@ -199,6 +200,8 @@ export function RatioSettingsCard({
               pricingBaseline.options['billing_setting.billing_mode'],
             BillingExpr:
               pricingBaseline.options['billing_setting.billing_expr'],
+            PluginBillingExpr:
+              pricingBaseline.options['billing_setting.plugin_billing_expr'],
           }
         : initialModelDefaults,
     [initialModelDefaults, pricingBaseline]
@@ -221,7 +224,7 @@ export function RatioSettingsCard({
       toast.success(t('Model prices reset successfully'))
       setConfirmOpen(false)
     },
-    onError: handleServerError,
+    onError: (error) => handleServerError(error),
   })
 
   const modelNormalizedDefaults = useRef({
@@ -238,6 +241,7 @@ export function RatioSettingsCard({
     ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
     BillingMode: normalizeJsonString(modelDefaults.BillingMode),
     BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+    PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
   })
   const [savedModelValues, setSavedModelValues] = useState(
     modelNormalizedDefaults.current
@@ -278,6 +282,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      PluginBillingExpr: formatJsonForTextarea(modelDefaults.PluginBillingExpr),
     },
   })
 
@@ -315,6 +320,7 @@ export function RatioSettingsCard({
       ExposeRatioEnabled: modelDefaults.ExposeRatioEnabled,
       BillingMode: normalizeJsonString(modelDefaults.BillingMode),
       BillingExpr: normalizeJsonString(modelDefaults.BillingExpr),
+      PluginBillingExpr: normalizeJsonString(modelDefaults.PluginBillingExpr),
     }
     setSavedModelValues(modelNormalizedDefaults.current)
 
@@ -332,6 +338,7 @@ export function RatioSettingsCard({
       ),
       BillingMode: formatJsonForTextarea(modelDefaults.BillingMode),
       BillingExpr: formatJsonForTextarea(modelDefaults.BillingExpr),
+      PluginBillingExpr: formatJsonForTextarea(modelDefaults.PluginBillingExpr),
     })
   }, [modelDefaults, modelForm])
 
@@ -382,6 +389,7 @@ export function RatioSettingsCard({
         ExposeRatioEnabled: values.ExposeRatioEnabled,
         BillingMode: normalizeJsonString(values.BillingMode),
         BillingExpr: normalizeJsonString(values.BillingExpr),
+        PluginBillingExpr: normalizeJsonString(values.PluginBillingExpr),
       }
 
       if (!pricingBaseline) return
@@ -549,7 +557,14 @@ export function RatioSettingsCard({
   return (
     <>
       {visibleTabs.length === 1 ? (
-        <SettingsSection title={t(titleKey)}>
+        <SettingsSection
+          title={t(titleKey)}
+          className={
+            defaultTab === 'models' || defaultTab === 'unset-models'
+              ? 'min-h-0 flex-1'
+              : undefined
+          }
+        >
           {renderTabContent(defaultTab)}
         </SettingsSection>
       ) : (
@@ -560,7 +575,15 @@ export function RatioSettingsCard({
 
           <SettingsSection title={t(titleKey)} className='min-h-0 flex-1'>
             {visibleTabs.map((tab) => (
-              <TabsContent key={tab} value={tab} className='min-h-0'>
+              <TabsContent
+                key={tab}
+                value={tab}
+                className={
+                  tab === 'models' || tab === 'unset-models'
+                    ? 'flex min-h-0 flex-col data-hidden:hidden'
+                    : 'min-h-0'
+                }
+              >
                 {renderTabContent(tab)}
               </TabsContent>
             ))}

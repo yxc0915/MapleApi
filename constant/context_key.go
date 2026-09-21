@@ -66,8 +66,9 @@ const (
 	ContextKeyAdminRejectReason ContextKey = "admin_reject_reason"
 
 	// ContextKeyLanguage stores the user's language preference for i18n
-	ContextKeyLanguage ContextKey = "language"
-	ContextKeyIsStream ContextKey = "is_stream"
+	ContextKeyLanguage             ContextKey = "language"
+	ContextKeyIsStream             ContextKey = "is_stream"
+	ContextKeyResponseStreamStatus ContextKey = "response_stream_status"
 
 	ContextKeySensitiveDetectionResult              ContextKey = "sensitive_detection_result"
 	ContextKeySensitiveDetectionDone                ContextKey = "sensitive_detection_done"
