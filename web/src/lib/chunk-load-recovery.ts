@@ -67,7 +67,8 @@ export function recoverFromChunkLoadError(error: unknown): boolean {
     if (Date.now() - lastReloadAt < RELOAD_COOLDOWN_MS) return false
     window.sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()))
   } catch {
-    // Storage may be unavailable; a single reload is still the best recovery.
+    // Without a persistent cooldown marker, reloading could loop indefinitely.
+    return false
   }
 
   window.location.reload()
