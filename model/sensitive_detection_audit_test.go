@@ -139,7 +139,7 @@ func TestGetUserLogsHidesSensitiveDetectionFields(t *testing.T) {
 		},
 	}).Error)
 
-	logs, total, err := GetUserLogs(1, LogTypeConsume, 0, 0, "", "", 0, 10, "", "", "")
+	logs, total, err := GetUserLogs(1, LogFilter{Type: LogTypeConsume}, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, logs, 2)
 	assert.Equal(t, int64(2), total)
