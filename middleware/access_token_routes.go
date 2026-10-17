@@ -162,6 +162,10 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/option/waffo-pancake/save":                        accessTokenScopeRule("option:write"),
 	"POST /api/option/waffo-pancake/subscription-product":        accessTokenScopeRule("option:write"),
 	"GET /api/option/waffo-pancake/subscription-product-options": accessTokenScopeRule("option:read"),
+	"GET /api/option/sensitive_detection/stats":                  accessTokenScopeRule("option:read"),
+	"GET /api/option/sensitive_detection/channels":               accessTokenScopeRule("option:read"),
+	"PUT /api/option/sensitive_detection/channels":               accessTokenScopeRule("option:write"),
+	"POST /api/option/sensitive_detection/test":                  accessTokenScopeRule("option:write"),
 
 	// router/api-router.go: /api/custom-oauth-provider, /api/ratio_sync
 	"POST /api/custom-oauth-provider/discovery": accessTokenScopeRule("option:write"),
