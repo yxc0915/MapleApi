@@ -48,6 +48,12 @@ const consumeLog: UsageLog = {
   }),
   request_id: 'req-1',
   upstream_request_id: '',
+  sensitive_detection_status: '',
+  sensitive_detection_checked: false,
+  sensitive_detection_trigger: '',
+  sensitive_detection_objects: '',
+  sensitive_detection_reason: '',
+  sensitive_detection_detector_status: 0,
 }
 
 async function chineseTranslator() {
