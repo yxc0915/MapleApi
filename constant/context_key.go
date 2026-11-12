@@ -39,6 +39,9 @@ const (
 	ContextKeyChannelIsMultiKey        ContextKey = "channel_is_multi_key"
 	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
 	ContextKeyChannelKey               ContextKey = "channel_key"
+	// ContextKeyProviderPlugin holds the jsplugin.PinnedPlugin whose relay
+	// routes serve this request on a task plugin channel.
+	ContextKeyProviderPlugin ContextKey = "provider_plugin"
 
 	// ContextKeyUpstreamRequestOrigin is the scheme and host of the last upstream
 	// request, which differs from the base URL for absolute Advanced Custom routes
@@ -74,6 +77,9 @@ const (
 	ContextKeyLanguage             ContextKey = "language"
 	ContextKeyIsStream             ContextKey = "is_stream"
 	ContextKeyResponseStreamStatus ContextKey = "response_stream_status"
+	// ContextKeyConsumeLog holds the *model.RecordConsumeLogParams of the
+	// request's last consume log, which request plugin report hooks read.
+	ContextKeyConsumeLog ContextKey = "consume_log"
 
 	ContextKeySensitiveDetectionResult              ContextKey = "sensitive_detection_result"
 	ContextKeySensitiveDetectionDone                ContextKey = "sensitive_detection_done"
